@@ -1,0 +1,9 @@
+node_modules
+.next
+.env*
+!.env.example
+.agent-wallet.json*
+.petops-data.json*
+next-env.d.ts
+*.tsbuildinfo
+.DS_Store
