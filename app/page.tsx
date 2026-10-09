@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import {
   Bot,
@@ -27,9 +28,9 @@ type Status = { hasApiKey: boolean; model: string; tools: { name: string; descri
 type WalletInfo = { address: string | null; balance?: string };
 
 const EXAMPLES = [
-  "Luna adında 3 yaşında, 4.8 kg bir kedim var. Profilini kaydet.",
-  "Luna bugün normalden daha az mama yedi.",
-  "Luna için günlük mama, haftalık kilo kontrolü ve aylık genel bakım planı hazırla.",
+  "I have a 3-year-old cat named Luna who weighs 4.8 kg. Save her profile.",
+  "Luna ate less food than usual today.",
+  "Create a daily feeding, weekly weight check, and monthly general care plan for Luna.",
 ];
 
 export default function Home() {
@@ -79,7 +80,7 @@ export default function Home() {
       setMessages((m) => [...m, data.error ? { role: "agent", text: data.error, error: true } : { role: "agent", text: data.answer, steps: data.steps }]);
       if (data.steps?.some((s: Step) => s.result?.payment)) loadWallet();
     } catch {
-      setMessages((m) => [...m, { role: "agent", text: "PetOps sunucusuna ulaşılamadı. Sunucunun çalıştığını kontrol edip yeniden deneyin.", error: true }]);
+      setMessages((m) => [...m, { role: "agent", text: "Could not reach the PetOps server. Check that it is running and try again.", error: true }]);
     }
     setThinking(false);
   }
@@ -94,7 +95,7 @@ export default function Home() {
           <Label>
             <span className="text-foreground">PetOps</span>&nbsp;/ AI Pet Care Agent
           </Label>
-          {status && <Label>Aktif model: {status.model}</Label>}
+          {status && <Label>Active model: {status.model}</Label>}
         </div>
         <h1 className="text-5xl leading-[0.9] font-bold tracking-[-0.045em] uppercase md:text-7xl">
           PetOps <span className="text-primary">pet care.</span>
@@ -176,24 +177,25 @@ export default function Home() {
           <ScrollArea className="min-h-0 flex-1">
             <div className="flex flex-col gap-5 px-4 py-4">
               {messages.length === 0 && (
-                <div className="flex flex-col items-center gap-5 py-16 text-center">
-                  <div className="flex size-12 items-center justify-center bg-primary text-primary-foreground">
-                    <Bot className="size-6" />
-                  </div>
+                <div className="flex flex-col items-center gap-5 px-2 py-12 text-center sm:py-16">
+                  <Image
+                    src="/petops-logo.png"
+                    alt="PetOps Logo"
+                    width={140}
+                    height={140}
+                    className="h-auto w-28 max-w-full sm:w-[140px]"
+                    priority
+                  />
                   <div>
-                    <p className="text-2xl font-bold tracking-tight uppercase">PetOps&apos;a evcil hayvanını anlat</p>
+                    <p className="text-2xl font-bold tracking-tight uppercase">TELL PETOPS ABOUT YOUR PET</p>
                     <p className="mt-1 text-muted-foreground">
-                      {!ready
-                        ? "Add your Groq API key to start."
-                        : wallet && !wallet.address
-                          ? "Bir örnek seçerek başlayabilirsin. Demo cüzdanı isteğe bağlıdır."
-                          : "Bir bakım sorusu seçerek başlayabilirsin."}
+                      Start with an example or describe your pet’s condition. Demo wallet is optional.
                     </p>
                   </div>
-                  <div className="flex flex-wrap justify-center gap-2">
+                  <div className="flex w-full max-w-2xl flex-col gap-2">
                     {EXAMPLES.map((e) => (
-                      <Button key={e} variant="outline" onClick={() => send(e)} disabled={!ready} className="font-mono">
-                        <span className="text-primary">&gt;</span> {e}
+                      <Button key={e} variant="outline" onClick={() => send(e)} disabled={!ready} className="h-auto min-h-10 w-full justify-start whitespace-normal py-2 text-left font-mono">
+                        <span className="shrink-0 text-primary">&gt;</span> {e}
                       </Button>
                     ))}
                   </div>
@@ -217,13 +219,13 @@ export default function Home() {
                         if (!approval || messages.slice(i + 1).some((later) => later.role === "user" && later.text === approval.command)) return null;
                         return (
                           <div key={`approval-${j}`} className="flex flex-col gap-2 border border-primary/50 bg-background p-3 text-sm">
-                            <p className="font-semibold">Önerilen bakım planı: {approval.title}</p>
+                            <p className="font-semibold">Proposed care plan: {approval.title}</p>
                             <p className="text-muted-foreground">{approval.description}</p>
                             <p className="font-mono text-xs text-muted-foreground">
-                              {({ daily: "Günlük", weekly: "Haftalık", monthly: "Aylık", custom: "Özel" } as Record<string, string>)[approval.frequency] ?? approval.frequency}
-                              {" · "}{new Date(approval.nextDueAt).toLocaleString("tr-TR")}
+                              {({ daily: "Daily", weekly: "Weekly", monthly: "Monthly", custom: "Custom" } as Record<string, string>)[approval.frequency] ?? approval.frequency}
+                              {" · "}{new Date(approval.nextDueAt).toLocaleString()}
                             </p>
-                            <Button className="w-fit" onClick={() => send(approval.command)} disabled={thinking}>Planı onayla</Button>
+                            <Button className="w-fit" onClick={() => send(approval.command)} disabled={thinking}>Approve plan</Button>
                           </div>
                         );
                       })}

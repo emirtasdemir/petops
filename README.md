@@ -1,69 +1,103 @@
 # PetOps
 
-## What is PetOps?
+## Product Logo
 
-PetOps is an AI pet care agent that helps users manage their pets’ ongoing care through persistent profiles, observations, care tasks, and user-approved care plans. It turns everyday updates into structured records and practical follow-ups while keeping people in control of long-term plans.
+<p align="center">
+  <img src="public/petops-logo.png" alt="PetOps Logo" width="500">
+</p>
 
-The starter kit originally used Gemini. For PetOps, the agent's model layer was migrated to Groq using the official TypeScript `groq-sdk` package. The agent uses Groq tool/function calling to select and run PetOps tools, then incorporates their results into its response.
+## Product Name
 
-## Week 1 Features
+**PetOps** — AI Pet Care Agent
 
-- Save and read pet profiles, including name, species, age, weight, food, and care notes.
-- Record real observations, such as a change in appetite, and retrieve recent observations in newest-first order.
-- Create dated care tasks and list pending tasks.
-- Propose daily, weekly, monthly, or custom care plans. A proposal is stored for review, but it does **not** become an active long-term plan until the user explicitly approves it.
-- Avoid duplicate observations, pending tasks, and active plans when similar records already exist.
-- Retry eligible Groq model requests without rerunning tools that have already succeeded, and provide rate-limit messages based on the available error details.
+## Project Description
 
-Pet records are persisted in a local JSON file for Week 1. The wallet and x402 payment infrastructure from the starter kit remain available, but neither is required for the PetOps care flow at this stage.
+PetOps is an AI pet care agent that helps users manage their pets' ongoing care through persistent profiles, observations, care tasks, and user-approved care plans. It turns everyday updates into structured records and practical follow-ups while keeping users in control of long-term plans.
+
+The Agentmaxxing starter kit originally used Gemini. PetOps replaces its agent model layer with the official TypeScript `groq-sdk` package and uses Groq tool/function calling to select tools and incorporate their results into responses.
+
+## Problem PetOps Solves
+
+Pet care details often arrive as scattered notes: a change in appetite, a task to check tomorrow, or a routine that needs repeating. PetOps keeps those details connected to a pet profile, makes recent observations and pending tasks easy to retrieve, and lets users review a longer-term care plan before it becomes active.
 
 ## Tech Stack
 
-- **Next.js, React, and TypeScript** for the application and API routes.
-- **Groq `groq-sdk`** for the agent's model calls and tool/function calling.
-- **Tailwind CSS and shadcn/ui** for the interface.
-- **Local JSON storage** for Week 1 pet profiles, observations, care tasks, and care plans.
-- **viem and the preserved x402 example** for the optional starter wallet and paid weather flow.
+Versions below are the dependency ranges declared in `package.json`:
 
-## Installation
+| Technology | Declared version | Role |
+| :--- | :--- | :--- |
+| Next.js | `^16.3.6` | Web application and API routes |
+| React / React DOM | `^19.3.0` | User interface |
+| TypeScript | `^5.9.3` | Typed application and agent code |
+| Groq SDK (`groq-sdk`) | `^1.6.0` | Model calls and tool/function calling |
+| Tailwind CSS | `^4.3.3` | Styling |
+| shadcn | `^4.21.0` | UI component tooling |
+| viem | `^2.56.9` | Preserved starter wallet and x402 flow |
 
-1. Install Node.js 20 or newer, then run `npm install`.
-2. Copy `.env.example` to `.env` (`cp .env.example .env`, or `Copy-Item .env.example .env` in PowerShell).
-3. Add your Groq API key to `GROQ_API_KEY` in `.env`. Choose a Groq model that supports tool/function calling.
-4. Run `npm run dev` and open [http://localhost:3000](http://localhost:3000).
+Pet data is stored in a local JSON file for Week 1. The interface also uses components built with `@base-ui/react` (`^1.8.0`).
 
-Restart the server after changing `.env`. If `GROQ_MODEL` is empty or absent, the application falls back to `openai/gpt-oss-20b`. The UI shows the active model. Creating a wallet is optional unless you want to try the starter weather/x402 flow.
+## Supported AI Models
 
-## Environment Variables
+PetOps uses the Groq SDK. Set `GROQ_MODEL` in `.env` to choose the model. The following Groq provider model IDs have been used and tested for this project:
 
-The committed `.env.example` contains placeholders only:
+- `openai/gpt-oss-20b` — application fallback when `GROQ_MODEL` is unset or empty.
+- `openai/gpt-oss-120b` — model selected in `.env.example`.
 
-```dotenv
-GROQ_API_KEY=
-GROQ_MODEL=openai/gpt-oss-120b
-WALLET_PRIVATE_KEY=
-```
-
-| Variable | Purpose |
-| :--- | :--- |
-| `GROQ_API_KEY` | Required Groq API key; put the real value only in your ignored `.env` file. |
-| `GROQ_MODEL` | Optional tool-capable Groq model; the example selects `openai/gpt-oss-120b`. |
-| `WALLET_PRIVATE_KEY` | Optional test-wallet private key for the preserved wallet/x402 example. Leave blank for the core PetOps flow. |
-| `PETOPS_DATA_FILE` | Optional server-side path for a separate local JSON data file, useful for isolated verification. |
+Other model IDs are not claimed as verified. The active model appears in the UI.
 
 ## Agent Tools
 
-| Area | Tools | What they do |
-| :--- | :--- | :--- |
-| Pet profiles | `get_pet_profile`, `save_pet_profile` | Read or save stable pet information. |
-| Observations | `record_pet_observation`, `get_pet_observations` | Record a reported observation or read recent history. |
-| Care tasks | `create_care_task`, `get_care_tasks` | Create a follow-up task or list pending tasks. |
-| Care plans | `create_care_plan`, `get_care_plan`, `update_care_plan` | Propose and explicitly approve a plan, read saved plans, or update one on request. |
-| Starter tools | `get_my_wallet`, `get_weather`, `roll_dice` | Keep the wallet/x402 and general tool examples accessible. |
+### PetOps core tools
 
-PetOps tools live in `agent/pet-tools.ts`; the original examples remain in `agent/tools.ts`. `agent/tool-registry.ts` combines them for the agent and UI.
+PetOps has **9 core tools** for the care workflow:
 
-## Demo Flow
+| Tool | Purpose |
+| :--- | :--- |
+| `get_pet_profile` | Read a saved pet profile. |
+| `save_pet_profile` | Save or update a pet profile. |
+| `record_pet_observation` | Record a user-reported observation. |
+| `get_pet_observations` | Retrieve a pet's recent observations. |
+| `create_care_task` | Create a dated follow-up task. |
+| `get_care_tasks` | Retrieve care tasks, including pending tasks. |
+| `create_care_plan` | Propose a care plan, then save it after explicit approval. |
+| `get_care_plan` | Retrieve saved care plans. |
+| `update_care_plan` | Update or deactivate a saved plan on request. |
+
+### Starter/demo tools
+
+| Tool | Purpose |
+| :--- | :--- |
+| `get_my_wallet` | Read the optional agent wallet's address and testnet balance. |
+| `get_weather` | Use the preserved paid weather/x402 example. |
+| `roll_dice` | Run the starter's simple tool example. |
+
+The registry in `agent/tool-registry.ts` places PetOps tools before starter/demo tools.
+
+## Key Features
+
+- **Persistent pet profiles:** Save a pet's identity, age, weight, food, and care notes for later conversations.
+- **Persistent observations:** Record what a user actually reports and read recent observations in newest-first order.
+- **Care task creation:** Turn a follow-up request into a dated task and list pending work.
+- **Duplicate protection:** Avoid creating another similar observation, pending task, or active plan when one already exists.
+- **User-approved care plans:** Show a proposal first; save a long-term plan only after explicit approval.
+- **Local persistence:** Keep Week 1 pet records in `.petops-data.json` rather than losing them between local sessions.
+- **Tool calling:** Let the Groq model call the appropriate registered tool and respond using the result.
+- **Rate-limit handling:** Retry eligible transient model failures without rerunning successful tools and give rate-limit feedback when details are available.
+- **Veterinary safety boundary:** Avoid definitive diagnoses or prescriptions and suggest veterinary evaluation for high-severity or recurring concerns.
+
+## Demo Video
+
+Demo video: Coming soon
+
+## Demo Links
+
+Week 1 (PetOps.v1): Coming soon
+
+Live App: [https://petops-u7si.onrender.com](https://petops-u7si.onrender.com)
+
+Repository: [https://github.com/emirtasdemir/petops](https://github.com/emirtasdemir/petops)
+
+### Demo Flow
 
 Start with an empty local data file and send these messages in order:
 
@@ -79,20 +113,50 @@ The three cadences are represented in one `custom` plan description and require 
 
 The browser sends its IANA time zone with chat requests. The agent and tools use it for relative dates and local display; if it is missing or invalid, the server falls back to UTC. Stored timestamps use ISO format. The verification script explicitly uses `Europe/Istanbul` for reproducible checks; the application itself is not locked to Istanbul.
 
-To verify the flow without changing your normal data file, set `PETOPS_DATA_FILE` to a new, empty path before starting the server. After `npm run build`, run `npm run start -- -p 3113`; in another terminal with the same data path, run `node scripts/verify-week1-demo.mjs`. The script never resets or deletes data, so use a fresh path for each run.
+For isolated verification, set `PETOPS_DATA_FILE` to a new, empty path before starting the server. After `npm run build`, run `npm run start -- -p 3113`; in another terminal with the same data path, run `node scripts/verify-week1-demo.mjs`. The script never resets or deletes data, so use a fresh path for each run.
+
+## Future Scope
+
+- **Week 2 direction:** Move pet data to a hosted persistent database, add multi-user support, track pet food and supplies, and improve agent memory.
+- **Week 3 direction:** Explore product recommendation and search tools, wallet-enabled actions, x402 paid API integration, and Base Sepolia payment experiments.
+
+These are planned directions, not current Week 1 capabilities.
+
+## Social Media
+
+X/Twitter: https://x.com/PetOpsAI
+
+## Installation
+
+1. Install Node.js 20 or newer, then run `npm install`.
+2. Copy `.env.example` to `.env` (`cp .env.example .env`, or `Copy-Item .env.example .env` in PowerShell).
+3. Add your Groq API key to `GROQ_API_KEY` in `.env`. Select one of the project-tested models with `GROQ_MODEL`.
+4. Run `npm run dev` and open [http://localhost:3000](http://localhost:3000).
+
+Restart the server after changing `.env`. Creating a wallet is optional for the PetOps care flow.
+
+## Environment Variables
+
+The committed `.env.example` contains placeholders only:
+
+```dotenv
+GROQ_API_KEY=
+GROQ_MODEL=openai/gpt-oss-120b
+WALLET_PRIVATE_KEY=
+```
+
+| Variable | Purpose |
+| :--- | :--- |
+| `GROQ_API_KEY` | Required Groq API key; put the real value only in your ignored `.env` file. |
+| `GROQ_MODEL` | Model ID; `.env.example` selects `openai/gpt-oss-120b`, and an empty or missing value falls back to `openai/gpt-oss-20b`. |
+| `WALLET_PRIVATE_KEY` | Optional test-wallet private key for the preserved wallet/x402 example. Leave blank for the core PetOps flow. |
+| `PETOPS_DATA_FILE` | Optional server-side path for a separate local JSON data file, useful for isolated verification. |
 
 ## Security & Safety
 
-`.gitignore` excludes `.env` variants, `.agent-wallet.json`, `.petops-data.json`, and their local backups. `.env.example` contains no credentials. Never place an API key or a real private key in source files, commits, issues, or pull requests. Use only a test wallet for the optional x402 example; its signed demo payments do not move real funds on-chain.
+`.gitignore` excludes `.env` variants, `.agent-wallet.json`, `.petops-data.json`, and their local backups. `.env.example` contains no credentials. Keep API keys and private keys out of source files and commits. Use only a test wallet for the optional starter payment flow.
 
-PetOps does not provide a definitive veterinary diagnosis or prescription. For high-severity or recurring observations, it can recommend veterinary evaluation. A proposed long-term care plan cannot be activated without explicit user approval.
-
-## What I Learned in Week 1
-
-- Tool schemas and agent instructions must agree, especially around optional values, IDs, and dates with time-zone offsets.
-- A successful tool result should determine whether the agent says a record was saved. Duplicate checks and explicit approval protect persistent care data.
-- Retrying only a failed model request avoids rerunning a tool that has already changed data. Rate-limit guidance should be specific only when the error details support it.
-- Local persistence is enough to validate the care workflow, while production use calls for stronger storage and access controls.
+Wallet and x402 infrastructure are preserved from the starter kit but are not required for the Week 1 PetOps care workflow. PetOps does not provide definitive veterinary diagnoses or prescriptions; for high-severity or recurring observations, it can recommend veterinary evaluation. A proposed long-term care plan cannot be activated without explicit user approval.
 
 ## Current Limitations
 
@@ -100,3 +164,10 @@ PetOps does not provide a definitive veterinary diagnosis or prescription. For h
 - A `custom` plan can describe daily, weekly, and monthly activities, but it has one `nextDueAt` value and does not automatically schedule a series of recurring tasks.
 - PetOps supports care tracking and follow-ups, not clinical decision-making. A veterinarian should guide medical decisions.
 - Wallet and x402 tools are retained from the starter kit but are not part of the required Week 1 pet care flow.
+
+## What I Learned in Week 1
+
+- Tool schemas and agent instructions must agree, especially around optional values, IDs, and dates with time-zone offsets.
+- A successful tool result should determine whether the agent says a record was saved. Duplicate checks and explicit approval protect persistent care data.
+- Retrying only a failed model request avoids rerunning a tool that has already changed data. Rate-limit guidance should be specific only when the error details support it.
+- Local persistence validates the care workflow while showing where stronger storage and access controls are needed.
