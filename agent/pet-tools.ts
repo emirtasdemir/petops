@@ -113,13 +113,13 @@ export const petTools: Tool[] = [
   },
   {
     name: "save_pet_profile",
-    description: "Create or update a pet profile from facts the user provided. Use for statements like 'my cat is Luna, age 3'. Supply name and species for a new pet. Omit unknown optional fields; omitted fields remain unchanged on updates. Send null for a detail only when intentionally clearing it. A successful result has saved: true.",
+    description: "Create or update a pet profile when the user explicitly asks to save it and provides the pet's name and species. A species word in the user's message is enough: cat, kitten, kedi, or kedim means species 'cat'; dog, puppy, köpek, or köpeğim means species 'dog'. For 'I have a 3-year-old cat named Luna who weighs 4.8 kg. Save her profile.', call this tool with name 'Luna', species 'cat', age 3, and weightKg 4.8; do not ask for species again. Extract other stated profile facts, but do not ask for breed, foodName, or notes when absent. Omit unknown optional fields instead of sending null; omitted fields remain unchanged on updates. Send null only when the user intentionally clears a detail. A successful result has saved: true.",
     parameters: {
       type: "object",
       properties: {
         petId: { type: ["string", "null"], description: "Existing pet ID when updating a specific profile; otherwise omit." },
         name: { type: ["string", "null"], description: "Pet's name; required for a new profile." },
-        species: { type: ["string", "null"], description: "Pet species, such as cat or dog; required for a new profile." },
+        species: { type: ["string", "null"], description: "Pet species, such as cat or dog; required for a new profile. Interpret cat/kitten/kedi/kedim as cat and dog/puppy/köpek/köpeğim as dog." },
         breed: { type: ["string", "null"], description: "Breed, if the user supplied it." },
         age: { type: ["number", "null"], description: "Age in years, if supplied." },
         weightKg: { type: ["number", "null"], description: "Weight in kilograms, if supplied." },
