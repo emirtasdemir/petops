@@ -87,11 +87,11 @@ The registry in `agent/tool-registry.ts` places PetOps tools before starter/demo
 
 ## Demo Video
 
-Demo video: Coming soon
+Demo video: [https://www.youtube.com/watch?v=4MMZUcMhcMI](https://www.youtube.com/watch?v=4MMZUcMhcMI)
 
 ## Demo Links
 
-Week 1 (PetOps.v1): Coming soon
+Week 1 (PetOps.v1): [https://www.youtube.com/watch?v=4MMZUcMhcMI](https://www.youtube.com/watch?v=4MMZUcMhcMI)
 
 Live App: [https://petops-u7si.onrender.com](https://petops-u7si.onrender.com)
 
@@ -124,7 +124,7 @@ These are planned directions, not current Week 1 capabilities.
 
 ## Social Media
 
-X/Twitter: https://x.com/PetOpsAI
+X/Twitter: [https://x.com/PetOpsAI](https://x.com/PetOpsAI)
 
 ## Installation
 
