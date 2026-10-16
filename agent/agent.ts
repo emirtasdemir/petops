@@ -12,6 +12,8 @@ import { availableTools } from "./tool-registry";
 import { listPetObservations, listPetProfiles } from "./pet-store";
 import { retryGroqCall } from "./groq-retry";
 import { detectResponseLanguage, languageInstruction } from "./response-language";
+import { explicitPlanRequest, explicitTaskRequest, handleSuggestionReply, suggestionsForTurn, withSuggestions } from "./proactive-agent";
+import type { ActionSuggestion } from "./action-suggestions";
 
 export const MODEL = process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b";
 const MAX_STEPS = 5;
@@ -44,16 +46,25 @@ const SYSTEM_PROMPT =
   "Never invent pet facts. Confirm a profile, task, or observation was saved only after its tool returns saved: true. If a tool fails, explain that nothing was saved. " +
   "For references like 'bu durumu' or 'this', resolve the latest relevant observation in the conversation; check its saved record when needed. If asked for both saved plans and pending tasks, call BOTH get_care_plan and get_care_tasks and summarize both results. " +
   "Pet supply tracking is a separate PetOps capability. When the user reports a current stock amount for a saved pet, use save_pet_supply; do not ask for optional usage or threshold values that were not given. Interpret g/day versus kg of stock with their stated units: pass dailyUsageUnit when it differs from unit, and never divide incompatible units. Use get_pet_supplies to list stock, update_pet_supply for an explicit change, and check_pet_supply_status for remaining days or low-stock questions. Estimate days only from a recorded positive dailyUsage; if missing, say the estimate is unavailable. If lowStock is true, suggest replenishing the supply but do not say it was bought or ordered. Offer a restock follow-up task, and call create_care_task for it only when the user explicitly asks for that task; never create one automatically from a low-stock result. Wallet and x402 are not used to purchase supplies. Confirm stock was saved or updated only when the corresponding tool returns saved: true; if duplicate: true, say the existing record was retained. " +
+  "PetOps can proactively identify sensible next steps from profiles, observations, tasks, plans, and supplies. A separate structured suggestion layer adds those user-facing suggestions after your answer; do not duplicate its follow-up questions. Do not call create_care_task or propose a care plan unless the user explicitly requested that action. A simple yes or do it is handled only for a previously offered suggestion. Never claim a suggested task, plan, or purchase already happened. Do not infer that low supply caused an appetite or health observation. " +
   "The response language is fixed by a separate system instruction for this request. Apply it to final answers, tool-result explanations, errors, and care-plan proposals. Do not infer a language from saved data, tool output, or the user's timezone. Keep tool names, IDs, and internal fields unchanged. In Turkish answers use Günlük, Haftalık, Aylık, or Özel without English enum values in parentheses. For dates, use the tool's *Local field verbatim when present; ISO timestamps ending in Z are UTC and must not be labeled as local time. Keep answers short and practical. " +
   "Other starter tools remain available when relevant; the wallet pays automatically for paid tools.";
 
-export type ChatMessage = { role: "user" | "agent"; text: string };
+export type ChatMessage = { role: "user" | "agent"; text: string; suggestions?: ActionSuggestion[] };
 export type Step = { tool: string; args: unknown; result: unknown; error?: boolean };
 
 export async function runAgent(history: ChatMessage[], ctx: { baseUrl: string; timeZone?: string }) {
   const userMessage = history.at(-1)?.role === "user" ? history.at(-1)!.text.trim() : "";
   const responseLanguage = detectResponseLanguage(userMessage);
-  const toolContext = { ...ctx, userMessage };
+  let timeZone = ctx.timeZone || "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+  } catch {
+    timeZone = "UTC";
+  }
+  const toolContext = { ...ctx, timeZone, userMessage };
+  const suggestionReply = await handleSuggestionReply(history, responseLanguage, timeZone);
+  if (suggestionReply) return suggestionReply;
   const approval = /^ONAYLA\s+([0-9a-f]{8}-[0-9a-f-]{27})$/i.exec(userMessage);
   if (approval) {
     const tool = availableTools.find((item) => item.name === "create_care_plan")!;
@@ -84,12 +95,6 @@ export async function runAgent(history: ChatMessage[], ctx: { baseUrl: string; t
       type, description, severity, observedAt,
     })),
   }));
-  let timeZone = ctx.timeZone || "UTC";
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone });
-  } catch {
-    timeZone = "UTC";
-  }
   const currentTime = new Intl.DateTimeFormat("en-US", { timeZone, dateStyle: "full", timeStyle: "long" }).format(new Date());
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: `${SYSTEM_PROMPT} Saved pet profiles and recent observations: ${JSON.stringify(savedPets)}. Current time: ${currentTime}. User timezone: ${timeZone}.` },
@@ -123,7 +128,11 @@ export async function runAgent(history: ChatMessage[], ctx: { baseUrl: string; t
     const message = response.choices[0]?.message;
     if (!message) throw new Error("Groq returned no message.");
     const calls = message.tool_calls ?? [];
-    if (calls.length === 0) return { answer: message.content ?? "", steps, ...(evaluationMode ? { modelCalls } : {}) };
+    if (calls.length === 0) {
+      const suggestions = suggestionsForTurn({ userMessage, steps, language: responseLanguage, timeZone });
+      return { answer: withSuggestions(message.content ?? "", suggestions), steps, suggestions,
+        ...(evaluationMode ? { modelCalls } : {}) };
+    }
 
     // Preserve the assistant's tool calls so each result can be matched by ID.
     messages.push({ role: "assistant", content: message.content, tool_calls: calls });
@@ -136,6 +145,13 @@ export async function runAgent(history: ChatMessage[], ctx: { baseUrl: string; t
       try {
         args = JSON.parse(call.function.arguments);
         if (!tool) throw new Error(`No tool named ${call.function.name}`);
+        if (tool.name === "create_care_task" && !explicitTaskRequest(userMessage)) {
+          throw new Error("Creating a care task requires an explicit user request or confirmation of a suggestion.");
+        }
+        if (tool.name === "create_care_plan" && (args as { mode?: unknown }).mode === "propose" &&
+            !explicitPlanRequest(userMessage)) {
+          throw new Error("Preparing a care plan requires an explicit user request or confirmation of a suggestion.");
+        }
         result = await tool.run(args, toolContext);
       } catch (err) {
         result = { error: err instanceof Error ? err.message : String(err) };

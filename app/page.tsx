@@ -22,9 +22,10 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { detectResponseLanguage } from "@/agent/response-language";
+import type { ActionSuggestion } from "@/agent/action-suggestions";
 
 type Step = { tool: string; args: unknown; result: { payment?: { amount: string }; [key: string]: unknown } | null; error?: boolean };
-type Message = { role: "user" | "agent"; text: string; steps?: Step[]; error?: boolean };
+type Message = { role: "user" | "agent"; text: string; steps?: Step[]; suggestions?: ActionSuggestion[]; error?: boolean };
 type Status = { hasApiKey: boolean; model: string; tools: { name: string; description: string }[] };
 type WalletInfo = { address: string | null; balance?: string };
 
@@ -73,12 +74,12 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: history.filter((m) => !m.error).map(({ role, text }) => ({ role, text })),
+          messages: history.filter((m) => !m.error).map(({ role, text, suggestions }) => ({ role, text, suggestions })),
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
       });
       const data = await res.json();
-      setMessages((m) => [...m, data.error ? { role: "agent", text: data.error, error: true } : { role: "agent", text: data.answer, steps: data.steps }]);
+      setMessages((m) => [...m, data.error ? { role: "agent", text: data.error, error: true } : { role: "agent", text: data.answer, steps: data.steps, suggestions: data.suggestions }]);
       if (data.steps?.some((s: Step) => s.result?.payment)) loadWallet();
     } catch {
       setMessages((m) => [...m, { role: "agent", text: detectResponseLanguage(text) === "tr"
