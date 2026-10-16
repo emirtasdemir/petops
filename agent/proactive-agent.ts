@@ -67,12 +67,26 @@ export function withSuggestions(answer: string, suggestions: ActionSuggestion[])
 }
 
 export function isAffirmative(message: string): boolean {
-  return /^(?:yes(?:,? please)?|do it|please do|go ahead|sure|evet|evet lütfen|yap|lütfen yap|tamam|onaylıyorum)[.!\s]*$/iu
+  return /^(?:yes(?:,?\s*(?:please\s+)?do it|,?\s*please)?|do it|please do|go ahead|sure|evet|evet lütfen|yap|lütfen yap|tamam|onaylıyorum)[.!\s]*$/iu
     .test(message.trim());
 }
 
 export function isNegative(message: string): boolean {
   return /^(?:no(?: thanks)?|not now|hayır|hayır teşekkürler|şimdi değil)[.!\s]*$/iu.test(message.trim());
+}
+
+export function careTaskError(message: string, language: ResponseLanguage): string {
+  const reason = /title is too long/i.test(message)
+    ? language === "tr" ? "Görev başlığı çok uzun." : "The task title is too long."
+    : /petId or petName is required|Pet profile not found/i.test(message)
+      ? language === "tr" ? "Evcil hayvan profili bulunamadı." : "The pet profile could not be found."
+      : /dueAt must be an ISO 8601/i.test(message)
+        ? language === "tr" ? "Görev tarihi geçersiz." : "The task date is invalid."
+        : /requires an explicit user request/i.test(message)
+          ? language === "tr" ? "Görev oluşturmak için açık isteğiniz veya öneri onayınız gerekli." : "Creating a task requires an explicit request or confirmation of a suggestion."
+          : language === "tr" ? "Görev oluşturulamadı." : "The care task could not be created.";
+  return language === "tr" ? `${reason} Yeni bir görev kaydedildiği doğrulanmadı.`
+    : `${reason} No new task was confirmed.`;
 }
 
 export function explicitTaskRequest(message: string): boolean {
@@ -147,9 +161,11 @@ export async function handleSuggestionReply(history: ChatTurn[], language: Respo
           : language === "tr" ? "Görev oluşturulamadı." : "The task could not be created.";
     return { answer, steps: [{ tool: tool.name, args, result, error: false }], suggestions: [] };
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     return {
-      answer: language === "tr" ? "Önerilen aksiyon tamamlanamadı; yeni kayıt oluşturulduğunu varsaymayın." : "The suggested action could not be completed; no new record is confirmed.",
-      steps: [{ tool: tool.name, args, result: { error: error instanceof Error ? error.message : String(error) }, error: true }],
+      answer: tool.name === "create_care_task" ? careTaskError(message, language)
+        : language === "tr" ? "Önerilen aksiyon tamamlanamadı; yeni kayıt oluşturulduğu doğrulanmadı." : "The suggested action could not be completed; no new record was confirmed.",
+      steps: [{ tool: tool.name, args, result: { error: message }, error: true }],
       suggestions: [],
     };
   }

@@ -87,7 +87,8 @@ try {
   const next = join(root, "node_modules", "next", "dist", "bin", "next");
   assert.ok(existsSync(next), "Install dependencies first.");
   server = spawn(process.execPath, [next, "dev", "-p", String(port), "-H", "127.0.0.1"], {
-    cwd: root, env: { ...process.env, PETOPS_DATA_FILE: dataFile }, stdio: ["ignore", "pipe", "pipe"],
+    cwd: root, env: { ...process.env, PETOPS_DATA_FILE: dataFile, GROQ_API_KEY: "test-only-no-model-calls" },
+    stdio: ["ignore", "pipe", "pipe"],
   });
   server.on("error", () => {});
   server.stdout.on("data", () => {});
@@ -105,10 +106,46 @@ try {
   await check("Yes confirms low-stock restock task", async () => {
     const data = fixture({ supplies: [food] });
     reset(data);
-    const result = await reply(url, "yes", suggestion(data, { supply: true }));
+    const result = await reply(url, "Yes, do it.", suggestion(data, { supply: true }));
+    assert.equal(result.steps.length, 1);
     assert.equal(result.steps[0].tool, "create_care_task");
     assert.equal(result.steps[0].result.saved, true);
+    assert.equal(result.steps[0].args.petId, pet.id);
+    assert.equal(Object.hasOwn(result.steps[0].args, "petName"), false);
+    assert.equal(result.steps[0].args.title, "Buy more food for Luna");
+    assert.equal(result.steps[0].args.description, "Restock the low supply.");
+    assert.match(result.steps[0].args.dueAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    assert.equal(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Istanbul", hour: "2-digit", hourCycle: "h23" })
+      .format(new Date(result.steps[0].args.dueAt)), "09");
+    assert.doesNotMatch(result.answer, /step limit/i);
     assert.equal(saved().tasks.length, 1);
+    console.log(`create_care_task arguments: ${JSON.stringify(result.steps[0].args)}`);
+  });
+
+  await check("Replaying the same suggestion does not create a second pending task", async () => {
+    const data = fixture({ supplies: [food] });
+    reset(data);
+    const offered = suggestion(data, { supply: true });
+    const first = await reply(url, "Yes, do it.", offered);
+    assert.equal(first.steps.length, 1);
+    const second = await reply(url, "Yes, do it.", offered);
+    assert.equal(second.steps.length, 0);
+    assert.equal(saved().tasks.length, 1);
+  });
+
+  await check("Controlled task validation failure stops after one call", async () => {
+    const longFood = { ...food, name: "food".repeat(501) };
+    const data = fixture({ supplies: [longFood] });
+    reset(data);
+    const result = await reply(url, "Yes, do it.", suggestion(data, { supply: true }));
+    assert.equal(result.steps.length, 1);
+    assert.equal(result.steps[0].tool, "create_care_task");
+    assert.equal(result.steps[0].error, true);
+    assert.match(result.steps[0].result.error, /title is too long/i);
+    assert.match(result.answer, /task title is too long/i);
+    assert.doesNotMatch(result.answer, /step limit/i);
+    assert.equal(saved().tasks.length, 0);
+    console.log(`Controlled tool error: ${result.steps[0].result.error}`);
   });
 
   await check("Confirmation ignores client-supplied tool arguments", async () => {
@@ -163,6 +200,6 @@ try {
       : contents.trim() === "@AGENTS.md";
     if (generated) unlinkSync(path);
   }
-  console.log(`Proactive approval checks: ${passed}/5 passed`);
-  if (passed !== 5) process.exitCode = 1;
+  console.log(`Proactive approval checks: ${passed}/7 passed`);
+  if (passed !== 7) process.exitCode = 1;
 }

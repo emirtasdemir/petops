@@ -12,7 +12,7 @@ import { availableTools } from "./tool-registry";
 import { listPetObservations, listPetProfiles } from "./pet-store";
 import { retryGroqCall } from "./groq-retry";
 import { detectResponseLanguage, languageInstruction } from "./response-language";
-import { explicitPlanRequest, explicitTaskRequest, handleSuggestionReply, suggestionsForTurn, withSuggestions } from "./proactive-agent";
+import { careTaskError, explicitPlanRequest, explicitTaskRequest, handleSuggestionReply, suggestionsForTurn, withSuggestions } from "./proactive-agent";
 import type { ActionSuggestion } from "./action-suggestions";
 
 export const MODEL = process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b";
@@ -52,6 +52,15 @@ const SYSTEM_PROMPT =
 
 export type ChatMessage = { role: "user" | "agent"; text: string; suggestions?: ActionSuggestion[] };
 export type Step = { tool: string; args: unknown; result: unknown; error?: boolean };
+
+function toolCallKey(name: string, args: unknown): string {
+  const sorted = (value: unknown): unknown => Array.isArray(value) ? value.map(sorted)
+    : value && typeof value === "object"
+      ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, item]) => [key, sorted(item)]))
+      : value;
+  return `${name}:${JSON.stringify(sorted(args))}`;
+}
 
 export async function runAgent(history: ChatMessage[], ctx: { baseUrl: string; timeZone?: string }) {
   const userMessage = history.at(-1)?.role === "user" ? history.at(-1)!.text.trim() : "";
@@ -105,6 +114,7 @@ export async function runAgent(history: ChatMessage[], ctx: { baseUrl: string; t
     })),
   ];
   const steps: Step[] = [];
+  const failedCalls = new Set<string>();
   let modelCalls = 0;
 
   for (let i = 0; i < MAX_STEPS; i++) {
@@ -142,8 +152,18 @@ export async function runAgent(history: ChatMessage[], ctx: { baseUrl: string; t
       let args: unknown = call.function.arguments;
       let result: unknown;
       let error = false;
+      let key: string | undefined;
       try {
         args = JSON.parse(call.function.arguments);
+        key = toolCallKey(call.function.name, args);
+        if (failedCalls.has(key)) {
+          return {
+            answer: responseLanguage === "tr"
+              ? "Aynı başarısız araç çağrısını yeniden çalıştırmadım. Lütfen isteği veya bilgileri gözden geçirin."
+              : "I did not repeat the same failed tool call. Please review the request or its details.",
+            steps, ...(evaluationMode ? { modelCalls } : {}),
+          };
+        }
         if (!tool) throw new Error(`No tool named ${call.function.name}`);
         if (tool.name === "create_care_task" && !explicitTaskRequest(userMessage)) {
           throw new Error("Creating a care task requires an explicit user request or confirmation of a suggestion.");
@@ -156,8 +176,13 @@ export async function runAgent(history: ChatMessage[], ctx: { baseUrl: string; t
       } catch (err) {
         result = { error: err instanceof Error ? err.message : String(err) };
         error = true;
+        if (key) failedCalls.add(key);
       }
       steps.push({ tool: call.function.name, args, result, error });
+      if (error && call.function.name === "create_care_task") {
+        return { answer: careTaskError((result as { error: string }).error, responseLanguage),
+          steps, ...(evaluationMode ? { modelCalls } : {}) };
+      }
       messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify({ result }) });
     }
   }
