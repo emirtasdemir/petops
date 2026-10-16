@@ -28,6 +28,7 @@
     --color-background: var(--background);
     --color-blue: var(--blue);
     --color-blue-soft: var(--blue-soft);
+    --color-cyan: var(--cyan);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
@@ -38,28 +39,29 @@
 }
 
 :root {
-    /* Agentmaxxing palette */
-    --background: #0A0A0A;
-    --foreground: #F2F1EC;
-    --card: #111110;
-    --card-foreground: #F2F1EC;
-    --popover: #111110;
-    --popover-foreground: #F2F1EC;
-    --primary: #C8E850;
-    --primary-foreground: #0A0A0A;
-    --secondary: #2A2A28;
-    --secondary-foreground: #F2F1EC;
-    --muted: #1A1A19;
-    --muted-foreground: #9A9A93;
-    --accent: #2A2A28;
-    --accent-foreground: #F2F1EC;
-    --destructive: #FF6B5A;
-    --border: rgba(242, 241, 236, 0.13);
-    --input: rgba(242, 241, 236, 0.24);
-    --ring: #C8E850;
-    --blue: #2030D8;
-    --blue-soft: #8C96FF;
-    --radius: 0rem;
+    /* PetOps navy, blue, cyan, and teal palette */
+    --background: #071625;
+    --foreground: #eaf8fb;
+    --card: #10283c;
+    --card-foreground: #eaf8fb;
+    --popover: #10283c;
+    --popover-foreground: #eaf8fb;
+    --primary: #29cbbd;
+    --primary-foreground: #052334;
+    --secondary: #193a52;
+    --secondary-foreground: #dff5fa;
+    --muted: #173246;
+    --muted-foreground: #a6c5d2;
+    --accent: #1b4d68;
+    --accent-foreground: #f0fcff;
+    --destructive: #ff8d95;
+    --border: rgba(125, 209, 227, 0.19);
+    --input: rgba(125, 209, 227, 0.27);
+    --ring: #5bdce4;
+    --blue: #288ee8;
+    --blue-soft: #a8d8f9;
+    --cyan: #70dfe8;
+    --radius: 0.9rem;
 }
 
 
@@ -74,9 +76,11 @@
     @apply font-sans;
     }
 }
-/* Faint 6 column grid behind the page, like agentmaxxin.xyz */
 body {
-  background-image: linear-gradient(to right, rgba(242, 241, 236, 0.045) 1px, transparent 1px);
-  background-size: calc(100% / 6) 100%;
+  background-image:
+    radial-gradient(circle at 9% 1%, rgba(31, 147, 195, 0.2), transparent 34rem),
+    radial-gradient(circle at 92% 0%, rgba(27, 194, 177, 0.13), transparent 32rem),
+    linear-gradient(180deg, #0a2132 0%, #071625 48%, #071625 100%);
+  background-attachment: fixed;
 }
 ::selection { background: var(--primary); color: var(--primary-foreground); }

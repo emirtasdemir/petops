@@ -89,9 +89,13 @@ The registry in `agent/tool-registry.ts` places PetOps tools before starter/demo
 
 Demo video: [https://www.youtube.com/watch?v=4MMZUcMhcMI](https://www.youtube.com/watch?v=4MMZUcMhcMI)
 
+Week 2 demo video: [https://youtu.be/KjnBIGH520U](https://youtu.be/KjnBIGH520U)
+
 ## Demo Links
 
 Week 1 (PetOps.v1): [https://www.youtube.com/watch?v=4MMZUcMhcMI](https://www.youtube.com/watch?v=4MMZUcMhcMI)
+
+Week 2 (PetOps.v2): [https://youtu.be/KjnBIGH520U](https://youtu.be/KjnBIGH520U)
 
 Live App: [https://petops-u7si.onrender.com](https://petops-u7si.onrender.com)
 
@@ -114,6 +118,16 @@ The three cadences are represented in one `custom` plan description and require 
 The browser sends its IANA time zone with chat requests. The agent and tools use it for relative dates and local display; if it is missing or invalid, the server falls back to UTC. Stored timestamps use ISO format. The verification script explicitly uses `Europe/Istanbul` for reproducible checks; the application itself is not locked to Istanbul.
 
 For isolated verification, set `PETOPS_DATA_FILE` to a new, empty path before starting the server. After `npm run build`, run `npm run start -- -p 3113`; in another terminal with the same data path, run `node scripts/verify-week1-demo.mjs`. The script never resets or deletes data, so use a fresh path for each run.
+
+## Week 2 Highlights
+
+- Pet supply tracking
+- Remaining-days estimation
+- Low-stock detection
+- Proactive next-action suggestions
+- User-confirmed task execution
+- Deterministic response language
+- Improved retry and tool error handling
 
 ## Week 2 Evaluation
 
