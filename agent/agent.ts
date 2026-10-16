@@ -11,9 +11,19 @@ import type { ChatCompletionMessageParam } from "groq-sdk/resources/chat/complet
 import { availableTools } from "./tool-registry";
 import { listPetObservations, listPetProfiles } from "./pet-store";
 import { retryGroqCall } from "./groq-retry";
+import { detectResponseLanguage, languageInstruction } from "./response-language";
 
 export const MODEL = process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b";
 const MAX_STEPS = 5;
+const week2Evaluation = process.env.PETOPS_WEEK2_EVAL === "1";
+const languageEvaluation = process.env.PETOPS_LANGUAGE_EVAL === "1";
+const evaluationMode = week2Evaluation || languageEvaluation;
+const week2ToolNames = new Set([
+  "save_pet_supply", "check_pet_supply_status", "create_care_task",
+]);
+const languageToolNames = new Set(["save_pet_profile", "save_pet_supply", "check_pet_supply_status"]);
+const agentTools = week2Evaluation ? availableTools.filter((tool) => week2ToolNames.has(tool.name))
+  : languageEvaluation ? availableTools.filter((tool) => languageToolNames.has(tool.name)) : availableTools;
 
 const SYSTEM_PROMPT =
   "You are PetOps AI Pet Care Agent. Help users track their pets' care and act on the pet facts they provide. " +
@@ -33,7 +43,8 @@ const SYSTEM_PROMPT =
   "When a due date is relative, calculate it from the current time in the user's timezone and pass an ISO 8601 timestamp with timezone offset. If no time is given, assume 09:00 local time and mention that assumption. " +
   "Never invent pet facts. Confirm a profile, task, or observation was saved only after its tool returns saved: true. If a tool fails, explain that nothing was saved. " +
   "For references like 'bu durumu' or 'this', resolve the latest relevant observation in the conversation; check its saved record when needed. If asked for both saved plans and pending tasks, call BOTH get_care_plan and get_care_tasks and summarize both results. " +
-  "Before every final answer, identify the language of the most recent user message. Use that language for the entire answer, even when earlier turns, saved data, tool output, or examples use another language. If the latest message is English, answer in English. If it is Turkish, answer in Turkish. Only use another language when the user explicitly requests it. Do not announce or label the chosen language; answer naturally. For example, after an English profile-saving exchange, 'Luna bugün normalden daha az mama yedi.' still requires a Turkish answer confirming the observation only if the tool saved it. Likewise, 'I have a 3-year-old cat named Luna who weighs 4.8 kg. Save her profile.' requires an English answer. Translate user-facing explanations of tool results, errors, headings, and care-plan frequency labels into the chosen language; tool names, IDs, and internal technical fields may remain unchanged. In Turkish answers use Günlük, Haftalık, Aylık, or Özel without English enum values in parentheses. For dates, use the tool's *Local field verbatim when present; ISO timestamps ending in Z are UTC and must not be labeled as local time. Keep answers short and practical. " +
+  "Pet supply tracking is a separate PetOps capability. When the user reports a current stock amount for a saved pet, use save_pet_supply; do not ask for optional usage or threshold values that were not given. Interpret g/day versus kg of stock with their stated units: pass dailyUsageUnit when it differs from unit, and never divide incompatible units. Use get_pet_supplies to list stock, update_pet_supply for an explicit change, and check_pet_supply_status for remaining days or low-stock questions. Estimate days only from a recorded positive dailyUsage; if missing, say the estimate is unavailable. If lowStock is true, suggest replenishing the supply but do not say it was bought or ordered. Offer a restock follow-up task, and call create_care_task for it only when the user explicitly asks for that task; never create one automatically from a low-stock result. Wallet and x402 are not used to purchase supplies. Confirm stock was saved or updated only when the corresponding tool returns saved: true; if duplicate: true, say the existing record was retained. " +
+  "The response language is fixed by a separate system instruction for this request. Apply it to final answers, tool-result explanations, errors, and care-plan proposals. Do not infer a language from saved data, tool output, or the user's timezone. Keep tool names, IDs, and internal fields unchanged. In Turkish answers use Günlük, Haftalık, Aylık, or Özel without English enum values in parentheses. For dates, use the tool's *Local field verbatim when present; ISO timestamps ending in Z are UTC and must not be labeled as local time. Keep answers short and practical. " +
   "Other starter tools remain available when relevant; the wallet pays automatically for paid tools.";
 
 export type ChatMessage = { role: "user" | "agent"; text: string };
@@ -41,6 +52,7 @@ export type Step = { tool: string; args: unknown; result: unknown; error?: boole
 
 export async function runAgent(history: ChatMessage[], ctx: { baseUrl: string; timeZone?: string }) {
   const userMessage = history.at(-1)?.role === "user" ? history.at(-1)!.text.trim() : "";
+  const responseLanguage = detectResponseLanguage(userMessage);
   const toolContext = { ...ctx, userMessage };
   const approval = /^ONAYLA\s+([0-9a-f]{8}-[0-9a-f-]{27})$/i.exec(userMessage);
   if (approval) {
@@ -52,14 +64,14 @@ export async function runAgent(history: ChatMessage[], ctx: { baseUrl: string; t
       };
       return {
         answer: result.saved
-          ? `“${result.plan.title}” bakım planı kaydedildi.`
-          : `Benzer bir aktif bakım planı zaten var: “${result.plan.title}”. Yeni plan oluşturulmadı.`,
+          ? responseLanguage === "tr" ? `“${result.plan.title}” bakım planı kaydedildi.` : `Care plan “${result.plan.title}” was saved.`
+          : responseLanguage === "tr" ? `Benzer bir aktif bakım planı zaten var: “${result.plan.title}”. Yeni plan oluşturulmadı.` : `A similar active care plan already exists: “${result.plan.title}”. No new plan was created.`,
         steps: [{ tool: tool.name, args, result, error: false }],
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return {
-        answer: `Bakım planı kaydedilemedi: ${message}`,
+        answer: responseLanguage === "tr" ? "Bakım planı kaydedilemedi. Lütfen tekrar deneyin." : "The care plan could not be saved. Please try again.",
         steps: [{ tool: tool.name, args, result: { error: message }, error: true }],
       };
     }
@@ -81,37 +93,43 @@ export async function runAgent(history: ChatMessage[], ctx: { baseUrl: string; t
   const currentTime = new Intl.DateTimeFormat("en-US", { timeZone, dateStyle: "full", timeStyle: "long" }).format(new Date());
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: `${SYSTEM_PROMPT} Saved pet profiles and recent observations: ${JSON.stringify(savedPets)}. Current time: ${currentTime}. User timezone: ${timeZone}.` },
+    { role: "system", content: languageInstruction(responseLanguage) },
     ...history.map((m): ChatCompletionMessageParam => ({
       role: m.role === "user" ? "user" : "assistant",
       content: m.text,
     })),
   ];
   const steps: Step[] = [];
+  let modelCalls = 0;
 
   for (let i = 0; i < MAX_STEPS; i++) {
-    const response = await retryGroqCall(() => ai.chat.completions.create({
-      model: MODEL,
-      messages,
-      tools: availableTools.map((t) => ({
-        type: "function",
-        function: {
-          name: t.name,
-          description: t.description,
-          parameters: t.parameters as Record<string, unknown>,
-        },
-      })),
-    }));
+    const response = await retryGroqCall(() => {
+      modelCalls++;
+      return ai.chat.completions.create({
+        model: MODEL,
+        messages,
+        ...(evaluationMode ? { reasoning_effort: "low" as const } : {}),
+        tools: agentTools.map((t) => ({
+          type: "function",
+          function: {
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters as Record<string, unknown>,
+          },
+        })),
+      });
+    });
 
     const message = response.choices[0]?.message;
     if (!message) throw new Error("Groq returned no message.");
     const calls = message.tool_calls ?? [];
-    if (calls.length === 0) return { answer: message.content ?? "", steps };
+    if (calls.length === 0) return { answer: message.content ?? "", steps, ...(evaluationMode ? { modelCalls } : {}) };
 
     // Preserve the assistant's tool calls so each result can be matched by ID.
     messages.push({ role: "assistant", content: message.content, tool_calls: calls });
 
     for (const call of calls) {
-      const tool = availableTools.find((t) => t.name === call.function.name);
+      const tool = agentTools.find((t) => t.name === call.function.name);
       let args: unknown = call.function.arguments;
       let result: unknown;
       let error = false;
@@ -128,5 +146,10 @@ export async function runAgent(history: ChatMessage[], ctx: { baseUrl: string; t
     }
   }
 
-  return { answer: "İşlem adımı sınırına ulaştım. İsteğini daha kısa yazarak tekrar dener misin?", steps };
+  return {
+    answer: responseLanguage === "tr"
+      ? "İşlem adımı sınırına ulaştım. İsteğini daha kısa yazarak tekrar dener misin?"
+      : "I reached the step limit. Could you try a shorter request?",
+    steps, ...(evaluationMode ? { modelCalls } : {}),
+  };
 }

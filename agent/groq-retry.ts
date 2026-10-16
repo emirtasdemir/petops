@@ -1,3 +1,5 @@
+import type { ResponseLanguage } from "./response-language";
+
 type ErrorFields = Record<string, unknown>;
 export type GroqRateLimitKind = "daily_tokens" | "minute_tokens" | "minute_requests" | "unknown";
 
@@ -99,12 +101,20 @@ function classifyRateLimit(code: string | null, errorType: unknown, message: str
   return "unknown";
 }
 
-export function rateLimitUserMessage(kind: GroqRateLimitKind): string {
+export function rateLimitUserMessage(kind: GroqRateLimitKind, language: ResponseLanguage = "en"): string {
+  if (language === "tr") {
+    switch (kind) {
+      case "daily_tokens": return "Günlük model kotası doldu. Kota yenilenmesini bekleyin veya farklı bir model seçin.";
+      case "minute_tokens": return "Kısa süreli token limiti aşıldı. Biraz bekleyip tekrar deneyin.";
+      case "minute_requests": return "Çok fazla istek gönderildi. Biraz bekleyip tekrar deneyin.";
+      default: return "Groq rate limitine ulaşıldı. Biraz sonra tekrar deneyin veya farklı bir model seçin.";
+    }
+  }
   switch (kind) {
-    case "daily_tokens": return "Günlük model kotası doldu. Kota yenilenmesini bekleyin veya farklı bir model seçin.";
-    case "minute_tokens": return "Kısa süreli token limiti aşıldı. Biraz bekleyip tekrar deneyin.";
-    case "minute_requests": return "Çok fazla istek gönderildi. Biraz bekleyip tekrar deneyin.";
-    default: return "Groq rate limitine ulaşıldı. Biraz sonra tekrar deneyin veya farklı bir model seçin.";
+    case "daily_tokens": return "The daily model quota is exhausted. Wait for it to reset or select another model.";
+    case "minute_tokens": return "The short-term token limit was reached. Please wait a moment and try again.";
+    case "minute_requests": return "Too many requests were sent. Please wait a moment and try again.";
+    default: return "The Groq rate limit was reached. Please try again shortly or select another model.";
   }
 }
 
@@ -133,7 +143,9 @@ export async function retryGroqCall<T>(call: () => Promise<T>, sleep: (milliseco
       return await call();
     } catch (error) {
       const info = groqErrorInfo(error);
-      const retryable = info.status === 429 || (info.status !== null && info.status >= 500 && info.status < 600);
+      const retryable = (info.status === 429 &&
+        (info.rateLimitKind === "minute_tokens" || info.rateLimitKind === "minute_requests")) ||
+        (info.status !== null && info.status >= 500 && info.status < 600);
       const nextRetryMs = retryable && attempt < 3 ? info.retryAfterMs ?? 1000 * 2 ** (attempt - 1) : null;
       if (process.env.NODE_ENV === "development" || info.status === 429) {
         console.error("[PetOps Groq]", {

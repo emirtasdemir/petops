@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { groqErrorInfo, rateLimitUserMessage, retryGroqCall } from "../agent/groq-retry.ts";
 
-function apiError(status, retryAfter, code = "test_error") {
+function apiError(status, retryAfter, code = "test_error", message = "Simulated Groq failure") {
   return {
     status,
     headers: new Headers(retryAfter === undefined ? {} : { "Retry-After": retryAfter }),
-    error: { error: { code, message: "Simulated Groq failure" } },
-    message: `${status} Simulated Groq failure`,
+    error: { error: { code, message } },
+    message: `${status} ${message}`,
   };
 }
 
@@ -16,12 +16,35 @@ test("429 retries only the request, at 1s and 2s, with three total attempts", as
   const delays = [];
   const result = await retryGroqCall(async () => {
     calls++;
-    if (calls < 3) throw apiError(429);
+    if (calls < 3) throw apiError(429, undefined, "rate_limit_exceeded", "Tokens per minute (TPM) limit reached");
     return "ok";
   }, async (milliseconds) => { delays.push(milliseconds); });
   assert.equal(result, "ok");
   assert.equal(calls, 3);
   assert.deepEqual(delays, [1000, 2000]);
+});
+
+test("daily token quota 429 stops after one request", async () => {
+  let calls = 0;
+  const failure = {
+    status: 429,
+    headers: new Headers({ "Retry-After": "3600" }),
+    error: { error: { code: "rate_limit_exceeded", message: "Tokens per day (TPD) limit reached" } },
+  };
+  await assert.rejects(retryGroqCall(async () => {
+    calls++;
+    throw failure;
+  }, async () => { throw new Error("Daily quota must not sleep or retry"); }));
+  assert.equal(calls, 1);
+});
+
+test("unclassified 429 is not retried without evidence of a temporary limit", async () => {
+  let calls = 0;
+  await assert.rejects(retryGroqCall(async () => {
+    calls++;
+    throw apiError(429);
+  }, async () => { throw new Error("Unclassified 429 must not sleep or retry"); }));
+  assert.equal(calls, 1);
 });
 
 test("Retry-After takes priority for 5xx and errors retain status/code/message", async () => {
@@ -69,7 +92,7 @@ test("a successful tool is not repeated when the following model request retries
   for (let turn = 0; turn < 2; turn++) {
     const response = await retryGroqCall(async () => {
       modelCalls++;
-      if (modelCalls === 2) throw apiError(429);
+      if (modelCalls === 2) throw apiError(429, undefined, "rate_limit_exceeded", "Requests per minute (RPM) limit reached");
       return modelCalls === 1 ? "tool_call" : "answer";
     }, async () => {});
     if (response === "tool_call") toolRuns++;
@@ -136,14 +159,14 @@ test("429 diagnostics include Groq limits, used tokens and retry duration", asyn
     const delays = [];
     await retryGroqCall(async () => {
       calls++;
-      if (calls === 1) throw { status: 429, headers, error: { error: { code: "rate_limit_exceeded", message: "Rate limit reached" } } };
+      if (calls === 1) throw { status: 429, headers, error: { error: { code: "rate_limit_exceeded", message: "Requests per minute (RPM) limit reached" } } };
       return "ok";
     }, async (milliseconds) => { delays.push(milliseconds); });
     assert.equal(calls, 2);
     assert.deepEqual(delays, [2000]);
     assert.deepEqual(entries[0][1], {
-      attempt: 1, status: 429, code: "rate_limit_exceeded", message: "Rate limit reached",
-      rateLimitKind: "unknown",
+      attempt: 1, status: 429, code: "rate_limit_exceeded", message: "Requests per minute (RPM) limit reached",
+      rateLimitKind: "minute_requests",
       requestLimit: 1000, requestsRemaining: 0,
       tokenLimit: 8000, tokensRemaining: 1500, tokensUsed: 6500,
       requestsReset: "2m59.56s", tokensReset: "7.66s", retryAfterMs: 2000, nextRetryMs: 2000,
@@ -180,8 +203,12 @@ test("429 limit kinds use explicit evidence and keep ambiguous cases generic", (
 });
 
 test("user messages match the identified 429 limit kind", () => {
-  assert.equal(rateLimitUserMessage("daily_tokens"), "Günlük model kotası doldu. Kota yenilenmesini bekleyin veya farklı bir model seçin.");
-  assert.equal(rateLimitUserMessage("minute_tokens"), "Kısa süreli token limiti aşıldı. Biraz bekleyip tekrar deneyin.");
-  assert.equal(rateLimitUserMessage("minute_requests"), "Çok fazla istek gönderildi. Biraz bekleyip tekrar deneyin.");
-  assert.equal(rateLimitUserMessage("unknown"), "Groq rate limitine ulaşıldı. Biraz sonra tekrar deneyin veya farklı bir model seçin.");
+  assert.equal(rateLimitUserMessage("daily_tokens", "tr"), "Günlük model kotası doldu. Kota yenilenmesini bekleyin veya farklı bir model seçin.");
+  assert.equal(rateLimitUserMessage("minute_tokens", "tr"), "Kısa süreli token limiti aşıldı. Biraz bekleyip tekrar deneyin.");
+  assert.equal(rateLimitUserMessage("minute_requests", "tr"), "Çok fazla istek gönderildi. Biraz bekleyip tekrar deneyin.");
+  assert.equal(rateLimitUserMessage("unknown", "tr"), "Groq rate limitine ulaşıldı. Biraz sonra tekrar deneyin veya farklı bir model seçin.");
+  assert.match(rateLimitUserMessage("daily_tokens", "en"), /daily model quota/i);
+  assert.match(rateLimitUserMessage("minute_tokens", "en"), /token limit/i);
+  assert.match(rateLimitUserMessage("minute_requests", "en"), /too many requests/i);
+  assert.match(rateLimitUserMessage("unknown", "en"), /Groq rate limit/i);
 });

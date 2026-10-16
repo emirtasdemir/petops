@@ -5,6 +5,9 @@ import { join } from "node:path";
 import { areDuplicateCareTasks } from "./care-task-duplicates";
 import { areDuplicateObservations, similarObservationDescriptions } from "./observation-duplicates";
 import { areSimilarCarePlans } from "./care-plan-duplicates";
+import { applySupplyUpdate, upsertSupply, type PetSupply, type SupplyInput } from "./pet-supply";
+
+export type { PetSupply, SupplyCategory } from "./pet-supply";
 
 export type PetProfile = {
   id: string;
@@ -64,13 +67,14 @@ type PetData = {
   observations: PetObservation[];
   carePlans: CarePlan[];
   carePlanProposals: CarePlanProposal[];
+  supplies: PetSupply[];
 };
 
 const DATA_FILE = process.env.PETOPS_DATA_FILE || join(process.cwd(), ".petops-data.json");
 
 function readData(): PetData {
   if (!existsSync(/* turbopackIgnore: true */ DATA_FILE)) {
-    return { profiles: [], tasks: [], observations: [], carePlans: [], carePlanProposals: [] };
+    return { profiles: [], tasks: [], observations: [], carePlans: [], carePlanProposals: [], supplies: [] };
   }
   const data: unknown = JSON.parse(readFileSync(/* turbopackIgnore: true */ DATA_FILE, "utf8"));
   if (!data || typeof data !== "object" || !("profiles" in data) || !("tasks" in data) ||
@@ -84,12 +88,16 @@ function readData(): PetData {
       ("carePlanProposals" in data && !Array.isArray(data.carePlanProposals))) {
     throw new Error("PetOps care plan data is invalid. Check .petops-data.json.");
   }
+  if ("supplies" in data && !Array.isArray(data.supplies)) {
+    throw new Error("PetOps supply data is invalid. Check .petops-data.json.");
+  }
   return {
     profiles: data.profiles as PetProfile[],
     tasks: data.tasks as CareTask[],
     observations: "observations" in data ? data.observations as PetObservation[] : [],
     carePlans: "carePlans" in data ? data.carePlans as CarePlan[] : [],
     carePlanProposals: "carePlanProposals" in data ? data.carePlanProposals as CarePlanProposal[] : [],
+    supplies: "supplies" in data ? data.supplies as PetSupply[] : [],
   };
 }
 
@@ -140,6 +148,46 @@ export function savePetProfile(fields: Omit<Partial<PetProfile>, "id"> & { petId
   else data.profiles.push(profile);
   writeData(data);
   return { saved: true, created: !existing, profile };
+}
+
+export function savePetSupply(input: SupplyInput):
+  { saved: boolean; created: boolean; duplicate: boolean; supply: PetSupply } {
+  const data = readData();
+  if (!data.profiles.some((pet) => pet.id === input.petId)) throw new Error("Pet profile not found for this supply.");
+  const result = upsertSupply(data.supplies, input, randomUUID(), new Date().toISOString());
+  if (result.saved) {
+    data.supplies = result.supplies;
+    writeData(data);
+  }
+  return { saved: result.saved, created: result.created, duplicate: result.duplicate, supply: result.supply };
+}
+
+export function listPetSupplies(petId: string): PetSupply[] {
+  return readData().supplies.filter((supply) => supply.petId === petId);
+}
+
+export function getPetSupply(supplyId: string): PetSupply {
+  const supply = readData().supplies.find((item) => item.id === supplyId);
+  if (!supply) throw new Error("Pet supply not found.");
+  return supply;
+}
+
+export function updatePetSupply(supplyId: string, changes: {
+  quantity?: number;
+  quantityUnit?: string;
+  dailyUsage?: number | null;
+  dailyUsageUnit?: string;
+  lowStockThreshold?: number | null;
+  thresholdUnit?: string;
+}): { saved: boolean; supply: PetSupply } {
+  const data = readData();
+  const index = data.supplies.findIndex((supply) => supply.id === supplyId);
+  if (index < 0) throw new Error("Pet supply not found.");
+  const result = applySupplyUpdate(data.supplies[index], changes, new Date().toISOString());
+  if (!result.saved) return result;
+  data.supplies[index] = result.supply;
+  writeData(data);
+  return result;
 }
 
 export function createCareTask(fields: { petId: string; title: string; description: string; dueAt: string | null }):

@@ -115,6 +115,18 @@ The browser sends its IANA time zone with chat requests. The agent and tools use
 
 For isolated verification, set `PETOPS_DATA_FILE` to a new, empty path before starting the server. After `npm run build`, run `npm run start -- -p 3113`; in another terminal with the same data path, run `node scripts/verify-week1-demo.mjs`. The script never resets or deletes data, so use a fresh path for each run.
 
+## Week 2 Evaluation
+
+Run `node scripts/verify-week2-agent.mjs` to evaluate five independent English prompts against the agent's real Groq tool-calling loop. The script starts an isolated local server and uses a temporary JSON data file; it does not change `.petops-data.json`. Pass `--model=openai/gpt-oss-20b` to select that tested model for one evaluation run without changing `.env`.
+
+1. **Supply Save:** Save Luna's 4 kg food stock and 120 g/day usage with `save_pet_supply`.
+2. **Supply Status:** Check the stock with `check_pet_supply_status` and report about 33 days remaining.
+3. **Low Stock:** Detect 0.4 kg below a 0.5 kg threshold without claiming an order was placed.
+4. **No Automatic Action:** Check low stock without creating a restock task or making a purchase.
+5. **Explicit Restock Task:** Check low stock, then create a task for tomorrow only after the user requests it.
+
+Latest run (October 16, 2026, `openai/gpt-oss-20b`): **Week 2 Agent Evaluation: 5/5 passed** with English responses required for every scenario; approximately 22 Groq model calls and no HTTP 429. A separate isolated language regression run passed 30/30 English and 3/3 Turkish responses. The response language is selected from the latest user message in code and pinned for every model turn.
+
 ## Future Scope
 
 - **Week 2 direction:** Move pet data to a hosted persistent database, add multi-user support, track pet food and supplies, and improve agent memory.

@@ -21,6 +21,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { detectResponseLanguage } from "@/agent/response-language";
 
 type Step = { tool: string; args: unknown; result: { payment?: { amount: string }; [key: string]: unknown } | null; error?: boolean };
 type Message = { role: "user" | "agent"; text: string; steps?: Step[]; error?: boolean };
@@ -80,7 +81,9 @@ export default function Home() {
       setMessages((m) => [...m, data.error ? { role: "agent", text: data.error, error: true } : { role: "agent", text: data.answer, steps: data.steps }]);
       if (data.steps?.some((s: Step) => s.result?.payment)) loadWallet();
     } catch {
-      setMessages((m) => [...m, { role: "agent", text: "Could not reach the PetOps server. Check that it is running and try again.", error: true }]);
+      setMessages((m) => [...m, { role: "agent", text: detectResponseLanguage(text) === "tr"
+        ? "PetOps sunucusuna bağlanılamadı. Sunucunun çalıştığını kontrol edip tekrar deneyin."
+        : "Could not reach the PetOps server. Check that it is running and try again.", error: true }]);
     }
     setThinking(false);
   }
