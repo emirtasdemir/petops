@@ -12,7 +12,7 @@
 
 ## Project Description
 
-PetOps is an AI pet care agent that helps users manage their pets' ongoing care through persistent profiles, observations, care tasks, and user-approved care plans. It turns everyday updates into structured records and practical follow-ups while keeping users in control of long-term plans.
+PetOps is an AI pet care agent that helps users manage their pets' ongoing care through persistent profiles, observations, care tasks, and user-approved care plans. It turns everyday updates into structured records and practical follow-ups while keeping users in control of long-term plans. Week 2 adds supply tracking, proactive suggestions, and a user-confirmed crypto transfer capability on Base Sepolia Testnet.
 
 The Agentmaxxing starter kit originally used Gemini. PetOps replaces its agent model layer with the official TypeScript `groq-sdk` package and uses Groq tool/function calling to select tools and incorporate their results into responses.
 
@@ -32,9 +32,9 @@ Versions below are the dependency ranges declared in `package.json`:
 | Groq SDK (`groq-sdk`) | `^1.6.0` | Model calls and tool/function calling |
 | Tailwind CSS | `^4.3.3` | Styling |
 | shadcn | `^4.21.0` | UI component tooling |
-| viem | `^2.56.9` | Preserved starter wallet and x402 flow |
+| viem | `^2.56.9` | Base Sepolia wallet and transfer signing, plus the preserved x402 flow |
 
-Pet data is stored in a local JSON file for Week 1. The interface also uses components built with `@base-ui/react` (`^1.8.0`).
+Pet data is stored in a local JSON file through Week 2. The interface also uses components built with `@base-ui/react` (`^1.8.0`).
 
 ## Supported AI Models
 
@@ -49,7 +49,7 @@ Other model IDs are not claimed as verified. The active model appears in the UI.
 
 ### PetOps core tools
 
-PetOps has **9 core tools** for the care workflow:
+PetOps has **13 care and supply tools**: the nine care tools below and four supply tools.
 
 | Tool | Purpose |
 | :--- | :--- |
@@ -62,16 +62,27 @@ PetOps has **9 core tools** for the care workflow:
 | `create_care_plan` | Propose a care plan, then save it after explicit approval. |
 | `get_care_plan` | Retrieve saved care plans. |
 | `update_care_plan` | Update or deactivate a saved plan on request. |
+| `save_pet_supply` | Save stock and optional daily usage for a pet. |
+| `get_pet_supplies` | List a pet's recorded supplies. |
+| `update_pet_supply` | Update stock, usage, or a low-stock threshold. |
+| `check_pet_supply_status` | Report low stock and estimate remaining days when usage data exists. |
+
+### Crypto transfer tools
+
+| Tool | Purpose |
+| :--- | :--- |
+| `prepare_token_transfer` | Validate a requested transfer and return a review proposal; **no transaction is sent**. |
+| `execute_token_transfer` | Submit the previously reviewed proposal only after explicit confirmation. |
 
 ### Starter/demo tools
 
 | Tool | Purpose |
 | :--- | :--- |
-| `get_my_wallet` | Read the optional agent wallet's address and testnet balance. |
+| `get_my_wallet` | Read the agent wallet's public address and Base Sepolia balance. |
 | `get_weather` | Use the preserved paid weather/x402 example. |
 | `roll_dice` | Run the starter's simple tool example. |
 
-The registry in `agent/tool-registry.ts` places PetOps tools before starter/demo tools.
+The registry in `agent/tool-registry.ts` places PetOps tools before starter/demo tools. Crypto transfer execution is controlled by a separate server-side confirmation flow, rather than ordinary model tool selection.
 
 ## Key Features
 
@@ -84,6 +95,13 @@ The registry in `agent/tool-registry.ts` places PetOps tools before starter/demo
 - **Tool calling:** Let the Groq model call the appropriate registered tool and respond using the result.
 - **Rate-limit handling:** Retry eligible transient model failures without rerunning successful tools and give rate-limit feedback when details are available.
 - **Veterinary safety boundary:** Avoid definitive diagnoses or prescriptions and suggest veterinary evaluation for high-severity or recurring concerns.
+- **Pet supply tracking:** Record food and other supplies, estimate remaining days when daily usage is known, and detect low stock against a saved threshold.
+- **Proactive suggestions:** Connect care context to useful next steps without creating tasks, plans, or purchases without the required user request or approval.
+- **User-confirmed actions:** Create suggested follow-up tasks only after confirmation; transfer proposals also require explicit confirmation.
+- **Deterministic English/Turkish responses:** Fix the response language for each request and its full tool loop.
+- **Base Sepolia testnet transfers:** Parse a supported natural-language request, show a transaction review, then submit it only after explicit confirmation. A returned transaction hash and explorer link identify the submitted transaction.
+- **Single-use transfer proposals:** Duplicate confirmation does not submit a second transaction, and failed blockchain submissions are not blindly retried.
+- **PetOps interface:** Custom logo, colors, chat, tool cards, and wallet panel replace the starter look.
 
 ## Demo Video
 
@@ -95,7 +113,7 @@ Week 2 demo video: [https://youtu.be/R8Iq7xtynqE](https://youtu.be/R8Iq7xtynqE)
 
 Week 1 (PetOps.v1): [https://www.youtube.com/watch?v=4MMZUcMhcMI](https://www.youtube.com/watch?v=4MMZUcMhcMI)
 
-Week 2 (PetOps.v2): [https://youtu.be/R8Iq7xtynqE](https://youtu.be/R8Iq7xtynqE)
+Week 2 Final Demo (PetOps.v2): [https://youtu.be/R8Iq7xtynqE](https://youtu.be/R8Iq7xtynqE)
 
 Live App: [https://petops-u7si.onrender.com](https://petops-u7si.onrender.com)
 
@@ -117,6 +135,10 @@ The three cadences are represented in one `custom` plan description and require 
 
 The browser sends its IANA time zone with chat requests. The agent and tools use it for relative dates and local display; if it is missing or invalid, the server falls back to UTC. Stored timestamps use ISO format. The verification script explicitly uses `Europe/Istanbul` for reproducible checks; the application itself is not locked to Istanbul.
 
+### Base Sepolia transfer flow
+
+With an agent test wallet configured, a user can write `Send 0.001 ETH to 0x...` (replacing `0x...` with a valid EVM recipient address). PetOps extracts the token, amount, sender wallet, recipient, and **Base Sepolia Testnet** network into a review card. `prepare_token_transfer` does not broadcast a transaction. The user must inspect the card and explicitly select **Confirm Transfer** or reply `Yes, send it.` before `execute_token_transfer` submits the signed transaction. On submission, PetOps shows its transaction hash and BaseScan explorer link. A proposal is single-use, and a failed submission is not automatically retried.
+
 For isolated verification, set `PETOPS_DATA_FILE` to a new, empty path before starting the server. After `npm run build`, run `npm run start -- -p 3113`; in another terminal with the same data path, run `node scripts/verify-week1-demo.mjs`. The script never resets or deletes data, so use a fresh path for each run.
 
 ## Week 2 Highlights
@@ -128,6 +150,9 @@ For isolated verification, set `PETOPS_DATA_FILE` to a new, empty path before st
 - User-confirmed task execution
 - Deterministic response language
 - Improved retry and tool error handling
+- Natural-language, user-confirmed Base Sepolia transfer flow
+- Wallet persistence through `WALLET_PRIVATE_KEY` in deployed environments
+- Customized PetOps UI
 
 ## Week 2 Evaluation
 
@@ -141,12 +166,14 @@ Run `node scripts/verify-week2-agent.mjs` to evaluate five independent English p
 
 Latest run (October 16, 2026, `openai/gpt-oss-20b`): **Week 2 Agent Evaluation: 5/5 passed** with English responses required for every scenario; approximately 22 Groq model calls and no HTTP 429. A separate isolated language regression run passed 30/30 English and 3/3 Turkish responses. The response language is selected from the latest user message in code and pinned for every model turn.
 
+The latest local suite passed **49/49 tests**, including transfer preparation, explicit confirmation, duplicate-confirmation protection, wallet persistence across fresh processes, and signing with an isolated test key. A live **0.001 ETH transfer** from the PetOps test wallet to the requested recipient successfully completed on **Base Sepolia Testnet**; the on-chain receipt reports success in block 49209911. [View the transaction and hash on BaseScan](https://sepolia.basescan.org/tx/0x3241abd72d75c8c73e52e7f0892a5b7b5e7633a3ce745575ad590ff7c82b7292).
+
 ## Future Scope
 
-- **Week 2 direction:** Move pet data to a hosted persistent database, add multi-user support, track pet food and supplies, and improve agent memory.
-- **Week 3 direction:** Explore product recommendation and search tools, wallet-enabled actions, x402 paid API integration, and Base Sepolia payment experiments.
+- **Next infrastructure steps:** Move pet data to a hosted persistent database, add multi-user support and authentication, and improve agent memory.
+- **Further agent work:** Explore product recommendation and search tools and x402 paid API integration.
 
-These are planned directions, not current Week 1 capabilities.
+These are planned directions, not current capabilities.
 
 ## Social Media
 
@@ -159,7 +186,7 @@ X/Twitter: [https://x.com/PetOpsAI](https://x.com/PetOpsAI)
 3. Add your Groq API key to `GROQ_API_KEY` in `.env`. Select one of the project-tested models with `GROQ_MODEL`.
 4. Run `npm run dev` and open [http://localhost:3000](http://localhost:3000).
 
-Restart the server after changing `.env`. Creating a wallet is optional for the PetOps care flow.
+Restart the server after changing `.env`. A wallet is optional for the PetOps care flow but required for a confirmed Base Sepolia transfer. For a deployed wallet that keeps the same address across Render restarts and redeploys, configure `WALLET_PRIVATE_KEY` as an environment secret on Render; use the same valid key each time.
 
 ## Environment Variables
 
@@ -175,14 +202,17 @@ WALLET_PRIVATE_KEY=
 | :--- | :--- |
 | `GROQ_API_KEY` | Required Groq API key; put the real value only in your ignored `.env` file. |
 | `GROQ_MODEL` | Model ID; `.env.example` selects `openai/gpt-oss-120b`, and an empty or missing value falls back to `openai/gpt-oss-20b`. |
-| `WALLET_PRIVATE_KEY` | Optional test-wallet private key for the preserved wallet/x402 example. Leave blank for the core PetOps flow. |
+| `WALLET_PRIVATE_KEY` | Base Sepolia test-wallet key. When set, it takes priority over `.agent-wallet.json` and keeps the same public address across restarts and redeploys. Leave blank to use the local Create Wallet flow. Store the real value only as a deployment secret or in ignored local `.env`. |
 | `PETOPS_DATA_FILE` | Optional server-side path for a separate local JSON data file, useful for isolated verification. |
+| `PETOPS_TRANSFER_FILE` | Optional server-side path for isolated transfer proposal tests; by default proposals use ignored `.petops-transfers.json`. |
 
 ## Security & Safety
 
-`.gitignore` excludes `.env` variants, `.agent-wallet.json`, `.petops-data.json`, and their local backups. `.env.example` contains no credentials. Keep API keys and private keys out of source files and commits. Use only a test wallet for the optional starter payment flow.
+`.gitignore` excludes `.env` variants, `.agent-wallet.json`, `.petops-data.json`, `.petops-transfers.json`, and their local backups. `.env.example` contains no credentials. Keep API keys and private keys out of source files and commits. The private key is never returned in the wallet or transfer API response, shown in the UI, or logged by the application. On Render, store it in the `WALLET_PRIVATE_KEY` environment secret; the ephemeral local wallet file is not a reliable source of wallet persistence across redeploys.
 
-Wallet and x402 infrastructure are preserved from the starter kit but are not required for the Week 1 PetOps care workflow. PetOps does not provide definitive veterinary diagnoses or prescriptions; for high-severity or recurring observations, it can recommend veterinary evaluation. A proposed long-term care plan cannot be activated without explicit user approval.
+The agent wallet and transfers use **Base Sepolia Testnet** only. They are not designed for mainnet funds. A natural-language request only prepares a review; explicit confirmation is required before an on-chain submission. The public demo has no authentication, so anyone with access to it can request and confirm a transfer from its test wallet. Keep the wallet limited to testnet assets.
+
+Wallet and x402 infrastructure are preserved from the starter kit; x402 is not required for the pet care workflow. PetOps does not provide definitive veterinary diagnoses or prescriptions; for high-severity or recurring observations, it can recommend veterinary evaluation. A proposed long-term care plan cannot be activated without explicit user approval.
 
 ## Current Limitations
 
@@ -190,6 +220,9 @@ Wallet and x402 infrastructure are preserved from the starter kit but are not re
 - A `custom` plan can describe daily, weekly, and monthly activities, but it has one `nextDueAt` value and does not automatically schedule a series of recurring tasks.
 - PetOps supports care tracking and follow-ups, not clinical decision-making. A veterinarian should guide medical decisions.
 - Wallet and x402 tools are retained from the starter kit but are not part of the required Week 1 pet care flow.
+- Transfer requests currently recognize a narrow set of English and Turkish command forms. Transfers are limited to Base Sepolia Testnet; ERC-20/USDC requires a trusted configured contract address and matching on-chain metadata, and is not claimed as a ready-to-use token here.
+- Transfer proposals are kept in a local JSON file. A redeploy can discard a pending review; the user must prepare and confirm a new one. Submission returns a transaction hash, not a guarantee of final chain confirmation.
+- The public demo has no user authentication or per-user wallet isolation. Do not fund its wallet with mainnet assets.
 
 ## What I Learned in Week 1
 
