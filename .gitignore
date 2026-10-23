@@ -4,6 +4,8 @@ node_modules
 !.env.example
 .agent-wallet.json*
 .petops-data.json*
+.petops-transfers.json*
+.wallet-test-*/
 next-env.d.ts
 *.tsbuildinfo
 .DS_Store

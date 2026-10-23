@@ -26,11 +26,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { detectResponseLanguage } from "@/agent/response-language";
 import type { ActionSuggestion } from "@/agent/action-suggestions";
+import type { TransferReview } from "@/agent/transfer-flow";
 
 type Step = { tool: string; args: unknown; result: { payment?: { amount: string }; [key: string]: unknown } | null; error?: boolean };
-type Message = { role: "user" | "agent"; text: string; steps?: Step[]; suggestions?: ActionSuggestion[]; error?: boolean };
+type Message = { role: "user" | "agent"; text: string; steps?: Step[]; suggestions?: ActionSuggestion[]; transferProposal?: TransferReview; error?: boolean };
 type Status = { hasApiKey: boolean; model: string; tools: { name: string; description: string }[] };
-type WalletInfo = { address: string | null; balance?: string };
+type WalletInfo = { address: string | null; balance?: string; source?: "environment" | "local" | null };
 
 const EXAMPLES = [
   { title: "Create a pet profile", icon: PawPrint, prompt: "I have a 3-year-old cat named Luna who weighs 4.8 kg. Save her profile." },
@@ -78,12 +79,12 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: history.filter((m) => !m.error).map(({ role, text, suggestions }) => ({ role, text, suggestions })),
+          messages: history.filter((m) => !m.error).map(({ role, text, suggestions, transferProposal }) => ({ role, text, suggestions, transferProposal })),
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
       });
       const data = await res.json();
-      setMessages((m) => [...m, data.error ? { role: "agent", text: data.error, error: true } : { role: "agent", text: data.answer, steps: data.steps, suggestions: data.suggestions }]);
+      setMessages((m) => [...m, data.error ? { role: "agent", text: data.error, error: true } : { role: "agent", text: data.answer, steps: data.steps, suggestions: data.suggestions, transferProposal: data.transferProposal }]);
       if (data.steps?.some((s: Step) => s.result?.payment)) loadWallet();
     } catch {
       setMessages((m) => [...m, { role: "agent", text: detectResponseLanguage(text) === "tr"
@@ -246,6 +247,22 @@ export default function Home() {
                     </div>
                     <div className="flex min-w-0 flex-col gap-2">
                       {m.steps?.map((s, j) => <ToolCall key={j} step={s} />)}
+                      {m.transferProposal && !messages.slice(i + 1).some((later) => later.role === "user") && (
+                        <div className="flex flex-col gap-3 rounded-xl border border-cyan/30 bg-blue/10 p-4 text-sm">
+                          <p className="font-semibold text-cyan">{m.transferProposal.responseLanguage === "tr" ? "Transfer incelemesi" : "Transfer review"} · {m.transferProposal.network}</p>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <p><span className="text-muted-foreground">Token</span><br />{m.transferProposal.token}</p>
+                            <p><span className="text-muted-foreground">{m.transferProposal.responseLanguage === "tr" ? "Miktar" : "Amount"}</span><br />{m.transferProposal.amount}</p>
+                            <p className="min-w-0 break-all"><span className="text-muted-foreground">{m.transferProposal.responseLanguage === "tr" ? "Gönderen" : "From"}</span><br /><code className="text-xs">{m.transferProposal.from}</code></p>
+                            <p className="min-w-0 break-all"><span className="text-muted-foreground">{m.transferProposal.responseLanguage === "tr" ? "Alıcı" : "To"}</span><br /><code className="text-xs">{m.transferProposal.recipient}</code></p>
+                            <p><span className="text-muted-foreground">{m.transferProposal.responseLanguage === "tr" ? "Ağ" : "Network"}</span><br />{m.transferProposal.network}</p>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{m.transferProposal.responseLanguage === "tr" ? "Henüz işlem gönderilmedi. Onaylamadan önce tüm bilgileri kontrol edin." : "No transaction has been sent. Verify every detail before confirming."}</p>
+                          <Button className="w-fit rounded-lg px-4" onClick={() => send(`CONFIRM_TRANSFER ${m.transferProposal!.id}`)} disabled={thinking}>
+                            {m.transferProposal.responseLanguage === "tr" ? "Transferi Onayla" : "Confirm Transfer"}
+                          </Button>
+                        </div>
+                      )}
                       {m.steps?.map((s, j) => {
                         const approval = planApproval(s);
                         if (!approval || messages.slice(i + 1).some((later) => later.role === "user" && later.text === approval.command)) return null;
@@ -377,7 +394,7 @@ function WalletDetails({ wallet, onRefresh }: { wallet: WalletInfo; onRefresh: (
           Get test ETH <ExternalLink className="size-3" />
         </a>
       </div>
-      <p className="text-xs text-muted-foreground">Base Sepolia testnet. Saved in .agent-wallet.json.</p>
+      <p className="text-xs text-muted-foreground">Base Sepolia testnet. {wallet.source === "environment" ? "Wallet configured for this deployment." : "Wallet saved locally in .agent-wallet.json."}</p>
     </div>
   );
 }

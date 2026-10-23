@@ -1,5 +1,6 @@
 import { petTools } from "./pet-tools";
 import { supplyTools } from "./pet-supply-tools";
+import { transferTools } from "./transfer-tools";
 import { tools } from "./tools";
 
 // Present the care workflow first; keep wallet and starter examples available afterward.
@@ -13,6 +14,7 @@ const petOrder = [
 const careTools = [...petTools, ...supplyTools];
 export const availableTools = [
   ...petOrder.map((name) => careTools.find((tool) => tool.name === name)!),
+  ...transferTools,
   ...tools.toSorted((a, b) => {
     if (a.name === "get_my_wallet") return -1;
     if (b.name === "get_my_wallet") return 1;

@@ -14,6 +14,7 @@ import { retryGroqCall } from "./groq-retry";
 import { detectResponseLanguage, languageInstruction } from "./response-language";
 import { careTaskError, explicitPlanRequest, explicitTaskRequest, handleSuggestionReply, suggestionsForTurn, withSuggestions } from "./proactive-agent";
 import type { ActionSuggestion } from "./action-suggestions";
+import { handleTransferTurn, type TransferReview } from "./transfer-flow";
 
 export const MODEL = process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b";
 const MAX_STEPS = 5;
@@ -24,8 +25,10 @@ const week2ToolNames = new Set([
   "save_pet_supply", "check_pet_supply_status", "create_care_task",
 ]);
 const languageToolNames = new Set(["save_pet_profile", "save_pet_supply", "check_pet_supply_status"]);
+const transferToolNames = new Set(["prepare_token_transfer", "execute_token_transfer"]);
 const agentTools = week2Evaluation ? availableTools.filter((tool) => week2ToolNames.has(tool.name))
-  : languageEvaluation ? availableTools.filter((tool) => languageToolNames.has(tool.name)) : availableTools;
+  : languageEvaluation ? availableTools.filter((tool) => languageToolNames.has(tool.name))
+    : availableTools.filter((tool) => !transferToolNames.has(tool.name));
 
 const SYSTEM_PROMPT =
   "You are PetOps AI Pet Care Agent. Help users track their pets' care and act on the pet facts they provide. " +
@@ -47,10 +50,11 @@ const SYSTEM_PROMPT =
   "For references like 'bu durumu' or 'this', resolve the latest relevant observation in the conversation; check its saved record when needed. If asked for both saved plans and pending tasks, call BOTH get_care_plan and get_care_tasks and summarize both results. " +
   "Pet supply tracking is a separate PetOps capability. When the user reports a current stock amount for a saved pet, use save_pet_supply; do not ask for optional usage or threshold values that were not given. Interpret g/day versus kg of stock with their stated units: pass dailyUsageUnit when it differs from unit, and never divide incompatible units. Use get_pet_supplies to list stock, update_pet_supply for an explicit change, and check_pet_supply_status for remaining days or low-stock questions. Estimate days only from a recorded positive dailyUsage; if missing, say the estimate is unavailable. If lowStock is true, suggest replenishing the supply but do not say it was bought or ordered. Offer a restock follow-up task, and call create_care_task for it only when the user explicitly asks for that task; never create one automatically from a low-stock result. Wallet and x402 are not used to purchase supplies. Confirm stock was saved or updated only when the corresponding tool returns saved: true; if duplicate: true, say the existing record was retained. " +
   "PetOps can proactively identify sensible next steps from profiles, observations, tasks, plans, and supplies. A separate structured suggestion layer adds those user-facing suggestions after your answer; do not duplicate its follow-up questions. Do not call create_care_task or propose a care plan unless the user explicitly requested that action. A simple yes or do it is handled only for a previously offered suggestion. Never claim a suggested task, plan, or purchase already happened. Do not infer that low supply caused an appetite or health observation. " +
+  "Crypto transfers use a separate server-controlled review and confirmation flow, only on Base Sepolia testnet. Always show the token, amount, sender, recipient, and network for review before execution. Never claim a transfer succeeded unless a transaction hash was returned after submission. Never expose private keys or change the user's requested token, amount, or recipient. Never retry a failed blockchain transaction blindly. " +
   "The response language is fixed by a separate system instruction for this request. Apply it to final answers, tool-result explanations, errors, and care-plan proposals. Do not infer a language from saved data, tool output, or the user's timezone. Keep tool names, IDs, and internal fields unchanged. In Turkish answers use Günlük, Haftalık, Aylık, or Özel without English enum values in parentheses. For dates, use the tool's *Local field verbatim when present; ISO timestamps ending in Z are UTC and must not be labeled as local time. Keep answers short and practical. " +
   "Other starter tools remain available when relevant; the wallet pays automatically for paid tools.";
 
-export type ChatMessage = { role: "user" | "agent"; text: string; suggestions?: ActionSuggestion[] };
+export type ChatMessage = { role: "user" | "agent"; text: string; suggestions?: ActionSuggestion[]; transferProposal?: TransferReview };
 export type Step = { tool: string; args: unknown; result: unknown; error?: boolean };
 
 function toolCallKey(name: string, args: unknown): string {
@@ -72,6 +76,8 @@ export async function runAgent(history: ChatMessage[], ctx: { baseUrl: string; t
     timeZone = "UTC";
   }
   const toolContext = { ...ctx, timeZone, userMessage };
+  const transferReply = await handleTransferTurn(history, responseLanguage);
+  if (transferReply) return transferReply;
   const suggestionReply = await handleSuggestionReply(history, responseLanguage, timeZone);
   if (suggestionReply) return suggestionReply;
   const approval = /^ONAYLA\s+([0-9a-f]{8}-[0-9a-f-]{27})$/i.exec(userMessage);

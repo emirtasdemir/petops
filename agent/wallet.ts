@@ -8,8 +8,8 @@
  *   2. Agent signs a payment      ->  with its wallet
  *   3. Agent retries with payment ->  API checks the signature and answers 200 OK
  *
- * You create the wallet with the "Create wallet" button on the page.
- * It is saved in `.agent-wallet.json` so it survives restarts.
+ * In deployments, WALLET_PRIVATE_KEY keeps the same wallet across restarts.
+ * Locally, "Create wallet" saves a wallet in `.agent-wallet.json`.
  *
  * Payments here are signed but NOT sent on-chain (it's a demo, no real money).
  */
@@ -24,10 +24,44 @@ const chain = createPublicClient({ chain: baseSepolia, transport: http() });
 
 export type Payment = { from: Address; to: Address; amount: string; asset: string; resource: string; nonce: string };
 
-/** The wallet from .env or .agent-wallet.json, or null if none was created yet. */
+/** Deployment configuration takes precedence; a blank env placeholder permits local mode. */
+export function getWalletSource(): "environment" | "local" | null {
+  if (process.env.WALLET_PRIVATE_KEY?.trim()) return "environment";
+  return fs.existsSync(WALLET_FILE) ? "local" : null;
+}
+
+/** The wallet from deployment env or the local file, or null if neither exists. */
 function loadAccount() {
-  const key = process.env.WALLET_PRIVATE_KEY || (fs.existsSync(WALLET_FILE) && JSON.parse(fs.readFileSync(WALLET_FILE, "utf8")).privateKey);
-  return key ? privateKeyToAccount(key as Hex) : null;
+  const source = getWalletSource();
+  if (!source) return null;
+  let localRecord: unknown = null;
+  if (source === "local") {
+    try {
+      localRecord = JSON.parse(fs.readFileSync(WALLET_FILE, "utf8"));
+    } catch {
+      throw new Error("The local wallet file is invalid.");
+    }
+  }
+  const key: unknown = source === "environment"
+    ? process.env.WALLET_PRIVATE_KEY?.trim()
+    : localRecord && typeof localRecord === "object" ? (localRecord as Record<string, unknown>).privateKey : undefined;
+  if (typeof key !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(key)) {
+    throw new Error(source === "environment" ? "WALLET_PRIVATE_KEY is invalid." : "The local wallet file is invalid.");
+  }
+  try {
+    const account = privateKeyToAccount(key as Hex);
+    if (source === "local") {
+      const storedAddress = (localRecord as Record<string, unknown>).address;
+      if (storedAddress !== undefined &&
+          (typeof storedAddress !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(storedAddress) ||
+            storedAddress.toLowerCase() !== account.address.toLowerCase())) {
+        throw new Error("Local wallet address does not match its private key.");
+      }
+    }
+    return account;
+  } catch {
+    throw new Error(source === "environment" ? "WALLET_PRIVATE_KEY is invalid." : "The local wallet file is invalid.");
+  }
 }
 
 function requireAccount() {
@@ -36,16 +70,23 @@ function requireAccount() {
   return account;
 }
 
-/** Make a brand new wallet and save it. */
-export function createWallet() {
-  if (loadAccount()) return getWalletAddress();
-  const privateKey = generatePrivateKey();
-  fs.writeFileSync(WALLET_FILE, JSON.stringify({ privateKey }, null, 2));
-  return privateKeyToAccount(privateKey).address;
+/** Make a brand new wallet and save it. The factory supports isolated tests with a fake key. */
+export function createWallet(keyGenerator: () => Hex = generatePrivateKey) {
+  const existing = loadAccount();
+  if (existing) return existing.address;
+  const privateKey = keyGenerator();
+  const account = privateKeyToAccount(privateKey);
+  fs.writeFileSync(WALLET_FILE, JSON.stringify({ address: account.address, privateKey }, null, 2), { mode: 0o600 });
+  return account.address;
 }
 
 export function getWalletAddress() {
   return loadAccount()?.address ?? null;
+}
+
+/** Server-only signing account and Base Sepolia public client for confirmed transfers. */
+export function getBaseSepoliaTransferContext() {
+  return { account: requireAccount(), publicClient: chain };
 }
 
 export async function getWalletBalance() {

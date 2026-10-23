@@ -18,7 +18,7 @@ export type Tool = {
   /** The code that runs when the agent calls this tool. */
   // Tools define different argument schemas, so each implementation narrows its own inputs.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  run: (args: any, ctx: { baseUrl: string; userMessage?: string; timeZone?: string }) => Promise<unknown>;
+  run: (args: any, ctx: { baseUrl: string; userMessage?: string; timeZone?: string; authorizedTransferProposalId?: string }) => Promise<unknown>;
 };
 
 export const tools: Tool[] = [
