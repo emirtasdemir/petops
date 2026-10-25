@@ -5,6 +5,7 @@ node_modules
 .agent-wallet.json*
 .petops-data.json*
 .petops-transfers.json*
+.petops-x402.json*
 .wallet-test-*/
 next-env.d.ts
 *.tsbuildinfo

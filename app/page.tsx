@@ -27,9 +27,10 @@ import { cn } from "@/lib/utils";
 import { detectResponseLanguage } from "@/agent/response-language";
 import type { ActionSuggestion } from "@/agent/action-suggestions";
 import type { TransferReview } from "@/agent/transfer-flow";
+import type { X402Review } from "@/agent/x402-flow";
 
 type Step = { tool: string; args: unknown; result: { payment?: { amount: string }; [key: string]: unknown } | null; error?: boolean };
-type Message = { role: "user" | "agent"; text: string; steps?: Step[]; suggestions?: ActionSuggestion[]; transferProposal?: TransferReview; error?: boolean };
+type Message = { role: "user" | "agent"; text: string; steps?: Step[]; suggestions?: ActionSuggestion[]; transferProposal?: TransferReview; x402Proposal?: X402Review; payment?: { status: string; transactionHash: string; explorerUrl: string; responseLanguage: "en" | "tr" }; premiumReport?: unknown; error?: boolean };
 type Status = { hasApiKey: boolean; model: string; tools: { name: string; description: string }[] };
 type WalletInfo = { address: string | null; balance?: string; source?: "environment" | "local" | null };
 
@@ -79,12 +80,12 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: history.filter((m) => !m.error).map(({ role, text, suggestions, transferProposal }) => ({ role, text, suggestions, transferProposal })),
+          messages: history.filter((m) => !m.error).map(({ role, text, suggestions, transferProposal, x402Proposal }) => ({ role, text, suggestions, transferProposal, x402Proposal })),
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
       });
       const data = await res.json();
-      setMessages((m) => [...m, data.error ? { role: "agent", text: data.error, error: true } : { role: "agent", text: data.answer, steps: data.steps, suggestions: data.suggestions, transferProposal: data.transferProposal }]);
+      setMessages((m) => [...m, data.error ? { role: "agent", text: data.error, error: true } : { role: "agent", text: data.answer, steps: data.steps, suggestions: data.suggestions, transferProposal: data.transferProposal, x402Proposal: data.x402Proposal, payment: data.payment, premiumReport: data.premiumReport }]);
       if (data.steps?.some((s: Step) => s.result?.payment)) loadWallet();
     } catch {
       setMessages((m) => [...m, { role: "agent", text: detectResponseLanguage(text) === "tr"
@@ -247,6 +248,35 @@ export default function Home() {
                     </div>
                     <div className="flex min-w-0 flex-col gap-2">
                       {m.steps?.map((s, j) => <ToolCall key={j} step={s} />)}
+                      {m.x402Proposal && !messages.slice(i + 1).some((later) => later.role === "user") && (
+                        <div className="flex flex-col gap-3 rounded-xl border border-cyan/30 bg-blue/10 p-4 text-sm">
+                          <p className="font-semibold text-cyan">Premium Pet Care Report · x402</p>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <p><span className="text-muted-foreground">{m.x402Proposal.responseLanguage === "tr" ? "Kaynak" : "Resource"}</span><br />{m.x402Proposal.resource} ({m.x402Proposal.petName})</p>
+                            <p><span className="text-muted-foreground">{m.x402Proposal.responseLanguage === "tr" ? "Ücret" : "Price"}</span><br />{m.x402Proposal.price} USDC</p>
+                            <p><span className="text-muted-foreground">{m.x402Proposal.responseLanguage === "tr" ? "Ağ" : "Network"}</span><br />{m.x402Proposal.network}</p>
+                            <p className="break-all"><span className="text-muted-foreground">{m.x402Proposal.responseLanguage === "tr" ? "Ödeyen cüzdan" : "Paying wallet"}</span><br /><code className="text-xs">{m.x402Proposal.payer}</code></p>
+                            <p className="break-all"><span className="text-muted-foreground">{m.x402Proposal.responseLanguage === "tr" ? "Alıcı" : "Recipient"}</span><br /><code className="text-xs">{m.x402Proposal.payTo}</code></p>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{m.x402Proposal.responseLanguage === "tr" ? "Henüz ödeme yapılmadı. Tutarı, ağı ve adresleri kontrol edin." : "No payment has been made. Verify the amount, network, and addresses."}</p>
+                          <Button className="w-fit rounded-lg px-4" onClick={() => send("CONFIRM_X402 " + m.x402Proposal!.id)} disabled={thinking}>
+                            {m.x402Proposal.responseLanguage === "tr" ? "Ödemeyi Onayla" : "Confirm payment"}
+                          </Button>
+                        </div>
+                      )}
+                      {m.payment && (
+                        <div className="rounded-xl border border-primary/35 bg-primary/5 p-4 text-sm">
+                          <p className="font-semibold text-cyan">{m.payment.responseLanguage === "tr" ? "Ödeme başarılı" : "Payment successful"}</p>
+                          <p className="mt-2 break-all font-mono text-xs">{m.payment.transactionHash}</p>
+                          <a href={m.payment.explorerUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-cyan underline">{m.payment.responseLanguage === "tr" ? "Base Sepolia explorer'da görüntüle" : "View on Base Sepolia explorer"} <ExternalLink className="size-3" /></a>
+                        </div>
+                      )}
+                      {m.premiumReport != null && (
+                        <div className="rounded-xl border border-cyan/25 bg-secondary/65 p-4 text-sm">
+                          <p className="font-semibold text-cyan">{m.payment?.responseLanguage === "tr" ? "Premium Evcil Hayvan Bakım Raporu" : "Premium Pet Care Report"}</p>
+                          <PremiumReport report={m.premiumReport} language={m.payment?.responseLanguage ?? "en"} />
+                        </div>
+                      )}
                       {m.transferProposal && !messages.slice(i + 1).some((later) => later.role === "user") && (
                         <div className="flex flex-col gap-3 rounded-xl border border-cyan/30 bg-blue/10 p-4 text-sm">
                           <p className="font-semibold text-cyan">{m.transferProposal.responseLanguage === "tr" ? "Transfer incelemesi" : "Transfer review"} · {m.transferProposal.network}</p>
@@ -322,6 +352,35 @@ export default function Home() {
         </Card>
       </div>
     </main>
+  );
+}
+
+function PremiumReport({ report, language }: { report: unknown; language: "en" | "tr" }) {
+  if (!report || typeof report !== "object") return null;
+  const value = report as {
+    pet?: { name?: string; species?: string; age?: number; weightKg?: number };
+    careSummary?: { recentObservations?: number; pendingTasks?: number; activePlans?: number; supplies?: number };
+    feedingReminders?: string[]; activitySuggestions?: string[];
+    observationFollowUp?: { type: string; description: string; severity: string }[];
+    generalRecommendations?: string[]; veterinaryNote?: string;
+  };
+  const tr = language === "tr";
+  return (
+    <div className="mt-3 space-y-3 text-sm">
+      <p>{value.pet?.name} · {value.pet?.species} · {value.pet?.age ?? "—"} {tr ? "yaş" : "years"} · {value.pet?.weightKg ?? "—"} kg</p>
+      <p className="text-muted-foreground">
+        {tr ? "Son gözlemler" : "Recent observations"}: {value.careSummary?.recentObservations ?? 0} ·{" "}
+        {tr ? "Bekleyen görevler" : "Pending tasks"}: {value.careSummary?.pendingTasks ?? 0} ·{" "}
+        {tr ? "Aktif planlar" : "Active plans"}: {value.careSummary?.activePlans ?? 0}
+      </p>
+      {value.feedingReminders?.length ? <p>{tr ? "Mama stokları" : "Food supplies"}: {value.feedingReminders.join(", ")}</p> : null}
+      {value.observationFollowUp?.map((observation, index) => (
+        <p key={index}>{tr ? "Gözlem" : "Observation"}: {observation.description} ({observation.severity})</p>
+      ))}
+      {value.activitySuggestions?.map((suggestion, index) => <p key={"activity-" + index}>{suggestion}</p>)}
+      {value.generalRecommendations?.map((suggestion, index) => <p key={"general-" + index}>{suggestion}</p>)}
+      {value.veterinaryNote && <p className="text-xs text-muted-foreground">{value.veterinaryNote}</p>}
+    </div>
   );
 }
 

@@ -9,6 +9,7 @@
  * and save. It shows up in the "Tools" list on the page.
  */
 import { getWalletAddress, getWalletBalance, payAndFetch } from "./wallet";
+import type { ResponseLanguage } from "./response-language";
 
 export type Tool = {
   name: string;
@@ -18,7 +19,7 @@ export type Tool = {
   /** The code that runs when the agent calls this tool. */
   // Tools define different argument schemas, so each implementation narrows its own inputs.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  run: (args: any, ctx: { baseUrl: string; userMessage?: string; timeZone?: string; authorizedTransferProposalId?: string }) => Promise<unknown>;
+  run: (args: any, ctx: { baseUrl: string; userMessage?: string; timeZone?: string; authorizedTransferProposalId?: string; authorizedX402ProposalId?: string; responseLanguage?: ResponseLanguage }) => Promise<unknown>;
 };
 
 export const tools: Tool[] = [

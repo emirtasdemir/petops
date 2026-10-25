@@ -15,6 +15,7 @@ import { detectResponseLanguage, languageInstruction } from "./response-language
 import { careTaskError, explicitPlanRequest, explicitTaskRequest, handleSuggestionReply, suggestionsForTurn, withSuggestions } from "./proactive-agent";
 import type { ActionSuggestion } from "./action-suggestions";
 import { handleTransferTurn, type TransferReview } from "./transfer-flow";
+import { handleX402Turn, type X402Review } from "./x402-flow";
 
 export const MODEL = process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b";
 const MAX_STEPS = 5;
@@ -25,7 +26,7 @@ const week2ToolNames = new Set([
   "save_pet_supply", "check_pet_supply_status", "create_care_task",
 ]);
 const languageToolNames = new Set(["save_pet_profile", "save_pet_supply", "check_pet_supply_status"]);
-const transferToolNames = new Set(["prepare_token_transfer", "execute_token_transfer"]);
+const transferToolNames = new Set(["prepare_token_transfer", "execute_token_transfer", "prepare_x402_payment", "execute_x402_payment"]);
 const agentTools = week2Evaluation ? availableTools.filter((tool) => week2ToolNames.has(tool.name))
   : languageEvaluation ? availableTools.filter((tool) => languageToolNames.has(tool.name))
     : availableTools.filter((tool) => !transferToolNames.has(tool.name));
@@ -54,7 +55,7 @@ const SYSTEM_PROMPT =
   "The response language is fixed by a separate system instruction for this request. Apply it to final answers, tool-result explanations, errors, and care-plan proposals. Do not infer a language from saved data, tool output, or the user's timezone. Keep tool names, IDs, and internal fields unchanged. In Turkish answers use Günlük, Haftalık, Aylık, or Özel without English enum values in parentheses. For dates, use the tool's *Local field verbatim when present; ISO timestamps ending in Z are UTC and must not be labeled as local time. Keep answers short and practical. " +
   "Other starter tools remain available when relevant; the wallet pays automatically for paid tools.";
 
-export type ChatMessage = { role: "user" | "agent"; text: string; suggestions?: ActionSuggestion[]; transferProposal?: TransferReview };
+export type ChatMessage = { role: "user" | "agent"; text: string; suggestions?: ActionSuggestion[]; transferProposal?: TransferReview; x402Proposal?: X402Review };
 export type Step = { tool: string; args: unknown; result: unknown; error?: boolean };
 
 function toolCallKey(name: string, args: unknown): string {
@@ -76,6 +77,8 @@ export async function runAgent(history: ChatMessage[], ctx: { baseUrl: string; t
     timeZone = "UTC";
   }
   const toolContext = { ...ctx, timeZone, userMessage };
+  const x402Reply = await handleX402Turn(history, responseLanguage, ctx.baseUrl);
+  if (x402Reply) return x402Reply;
   const transferReply = await handleTransferTurn(history, responseLanguage);
   if (transferReply) return transferReply;
   const suggestionReply = await handleSuggestionReply(history, responseLanguage, timeZone);
