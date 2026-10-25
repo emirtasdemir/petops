@@ -2,6 +2,7 @@ import { MODEL, runAgent } from "@/agent/agent";
 import { availableTools } from "@/agent/tool-registry";
 import { groqErrorInfo, rateLimitUserMessage } from "@/agent/groq-retry";
 import { detectResponseLanguage, type ResponseLanguage } from "@/agent/response-language";
+import { petOpsOrigin } from "@/agent/x402-origin";
 
 // GET /api/agent -> setup status + the list of tools (shown on the page)
 export async function GET() {
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
     if (!process.env.GROQ_API_KEY) return Response.json({ error: responseLanguage === "tr"
       ? "PetOps hazır değil. .env dosyasına GROQ_API_KEY ekleyip sunucuyu yeniden başlatın."
       : "PetOps is not ready. Add GROQ_API_KEY to .env and restart the server." }, { status: 500 });
-    const result = await runAgent(messages, { baseUrl: new URL(req.url).origin, timeZone });
+    const result = await runAgent(messages, { baseUrl: petOpsOrigin(req.url), timeZone });
     return Response.json(result);
   } catch (err) {
     const { status, rateLimitKind } = groqErrorInfo(err);

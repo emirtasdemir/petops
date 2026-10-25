@@ -40,6 +40,21 @@ function safeError(error: unknown, language: ResponseLanguage) {
     : "The x402 payment or report failed. Payment status may be uncertain; do not retry automatically.";
 }
 
+function prepareError(error: unknown, language: ResponseLanguage) {
+  const message = error instanceof Error ? error.message : "";
+  if (/terms differ|Unrecognized PetOps request origin/i.test(message)) {
+    console.error("[PetOps x402] Preparation rejected: premium resource origin or payment terms mismatch.");
+  } else if (/did not return an x402 payment requirement/i.test(message)) {
+    console.error("[PetOps x402] Preparation rejected: premium resource did not return HTTP 402.");
+  } else {
+    console.error("[PetOps x402] Preparation failed:", error instanceof Error ? error.name : "Unknown error");
+  }
+  if (/Pet profile not found|not configured|no wallet yet|invalid/i.test(message)) return safeError(error, language);
+  return language === "tr"
+    ? "Premium ödeme koşulları doğrulanamadı. Ödeme yapılmadı; lütfen daha sonra tekrar deneyin."
+    : "The premium payment terms could not be verified. No payment was made; please try again later.";
+}
+
 export async function handleX402Turn(history: Turn[], language: ResponseLanguage, baseUrl: string,
   actions: Handlers = handlers): Promise<Reply | null> {
   const text = history.at(-1)?.text.trim() || "";
@@ -59,7 +74,7 @@ export async function handleX402Turn(history: Turn[], language: ResponseLanguage
         steps: [{ tool: "prepare_x402_payment", args, result: { httpStatus, review }, error: false }],
         x402Proposal: review };
     } catch (error) {
-      const answer = safeError(error, language);
+      const answer = prepareError(error, language);
       return { answer, steps: [{ tool: "prepare_x402_payment", args, result: { error: answer }, error: true }] };
     }
   }

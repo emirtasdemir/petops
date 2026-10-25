@@ -4,6 +4,7 @@ import { rmSync } from "node:fs";
 import test from "node:test";
 import { NextRequest } from "next/server";
 import { createPremiumHandler } from "../agent/premium-route-handler.ts";
+import { canonicalPremiumRequest, petOpsOrigin } from "../agent/x402-origin.ts";
 import { savePetProfile } from "../agent/pet-store.ts";
 import { getWalletAddress } from "../agent/wallet.ts";
 import { handleX402Turn } from "../agent/x402-flow.ts";
@@ -98,6 +99,37 @@ test("local 127.0.0.1 and localhost describe the same protected resource", () =>
   assert.equal(samePremiumResource(declared, requested), true);
   assert.equal(samePremiumResource("http://example.com:3100/api/premium/pet-report?petId=luna&lang=en", requested), false);
   assert.equal(samePremiumResource("http://localhost:3101/api/premium/pet-report?petId=luna&lang=en", requested), false);
+});
+
+test("Render bind URL becomes the allowlisted public x402 resource", async (t) => {
+  const f = fixture(t);
+  const path = `/api/premium/pet-report?petId=${f.pet.id}&lang=en`;
+  const publicUrl = `https://petops-u7si.onrender.com${path}`;
+  const internalUrl = `https://0.0.0.0:10000${path}`;
+  assert.equal(petOpsOrigin(internalUrl, true), "https://petops-u7si.onrender.com");
+  const request = canonicalPremiumRequest(new NextRequest(internalUrl,
+    { headers: { host: "0.0.0.0:10000" } }), true);
+  assert.equal(request.url, publicUrl);
+  const response = await createPremiumHandler(payTo, f.facilitator)(request);
+  assert.equal(response.status, 402);
+  const { required } = parsePremiumRequirement(response, publicUrl);
+  assert.equal(required.resource.url, publicUrl);
+  const fetchImpl = async (url, init) => createPremiumHandler(payTo, f.facilitator)(
+    canonicalPremiumRequest(new NextRequest(url, init), true));
+  const { proposal } = await prepareX402Payment("Luna", petOpsOrigin(internalUrl, true), fetchImpl);
+  assert.equal(proposal.resource, publicUrl);
+  assert.equal(proposal.payer, getWalletAddress());
+  assert.equal(f.settlements(), 0);
+});
+
+test("production origin rejects external hosts and preserves local development", () => {
+  const path = "/api/premium/pet-report?petId=luna&lang=en";
+  assert.equal(petOpsOrigin(`https://petops-u7si.onrender.com${path}`, true), "https://petops-u7si.onrender.com");
+  assert.equal(petOpsOrigin(`http://localhost:3000${path}`, true), "http://localhost:3000");
+  assert.equal(petOpsOrigin(`http://localhost:3000${path}`, false), "http://localhost:3000");
+  assert.throws(() => petOpsOrigin(`https://evil.example${path}`, true), /Unrecognized PetOps request origin/);
+  assert.throws(() => petOpsOrigin(`https://0.0.0.0:9999${path}`, true), /Unrecognized PetOps request origin/);
+  assert.equal(samePremiumResource(`https://evil.example${path}`, `https://petops-u7si.onrender.com${path}`), false);
 });
 
 test("review does not execute payment before approval", async (t) => {

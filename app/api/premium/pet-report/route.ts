@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { createPremiumHandler } from "@/agent/premium-route-handler";
 import { X402_FACILITATOR, premiumPayTo } from "@/agent/x402-config";
+import { canonicalPremiumRequest } from "@/agent/x402-origin";
 
 export const runtime = "nodejs";
 
@@ -12,5 +13,5 @@ export async function GET(request: NextRequest) {
   if (!cached || cached.payTo !== payTo) {
     cached = { payTo, handle: createPremiumHandler(payTo, new HTTPFacilitatorClient({ url: X402_FACILITATOR })) };
   }
-  return cached.handle(request);
+  return cached.handle(canonicalPremiumRequest(request));
 }
